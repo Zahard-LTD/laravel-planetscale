@@ -89,6 +89,8 @@ $ composer test
 
 Please see the [contributing](contributing.md) guidelines.
 
+Note: X7 Media is no longer using PlanetScale for any internal or client databases anymore, as such we will not be making any changes to or activly supporting this package. However, since some of you are still relying on this in production, we will occassionaly review PR's to merge as necessary to add support for future versions of Laravel or to add features or bug fixes.
+
 ## Security
 
 If you discover any security related issues, please email info@x7media.com instead of using the issue tracker.
