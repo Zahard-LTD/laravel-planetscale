@@ -128,7 +128,7 @@ class PscaleMigrateCommand extends BaseCommand
         do {
             sleep($this->pollRate);
             $deployment_state = $this->pscale->deploymentState($deploy_id);
-        } while (!in_array($deployment_state, ['complete', 'complete_cancel', 'complete_error']));
+        } while (!in_array($deployment_state, ['complete', 'complete_cancel', 'complete_error', 'complete_pending_revert']));
 
         if ($deployment_state == 'complete_cancel')
             return $this->error('The deployment was unexpectedly canceled.');
