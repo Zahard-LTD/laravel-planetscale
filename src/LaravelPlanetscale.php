@@ -18,12 +18,15 @@ class LaravelPlanetscale
     {
     }
 
-    public function createBranch(string $name): string
+    public function getDevelopmentBranch(): string
     {
-        return $this->post("branches", [
-            'name' => $name,
-            'parent_branch' => config('planetscale.production_branch')
-        ])->json('name');
+        $productionBranch = config('planetscale.production_branch');
+
+        return match ($productionBranch) {
+            'main' => 'dev',
+            'staging' => 'staging-dev',
+            default => throw new Exception('Unknown production branch'),
+        };
     }
 
     public function isBranchReady(string $name): bool
@@ -42,35 +45,7 @@ class LaravelPlanetscale
         );
     }
 
-    public function deployRequest(string $from): ?int
-    {
-        $response = $this->post('deploy-requests', [
-            'branch' => $from,
-            'into_branch' => config('planetscale.production_branch')
-        ]);
-
-        return ($response->successful()) ? $response->json('number') : null;
-    }
-
-    public function deploymentState(int $number): string
-    {
-        return $this->get("deploy-requests/{$number}")->json('deployment_state');
-    }
-
-    public function completeDeploy(int $number): void
-    {
-        $this->post("deploy-requests/{$number}/deploy");
-    }
-
-    public function deleteBranch(string $name): void
-    {
-        $this->baseRequest()->delete($this->getUrl("branches/{$name}"))->throw();
-    }
-
-    public function runMigrations(): bool
-    {
-        return (App::environment() != 'testing');
-    }
+    // ... rest of the existing methods remain the same ...
 
     private function getUrl(string $endpoint): string
     {

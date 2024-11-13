@@ -58,22 +58,12 @@ class PscaleMigrateCommand extends BaseCommand
     {
         // create the development branch
         $this->line('Creating development branch to run migrations on...');
-        try {
-            $dev_branch = $this->pscale->createBranch('artisan-migrate-' . time());
-        } catch (RequestException $e) {
-            return $this->error('Failed to create development branch.');
-        }
-
-        // Gotta wait for the new branch to initalize
-        $this->line('Waiting for development branch to initalize...');
-        do {
-            sleep($this->pollRate);
-        } while (!$this->pscale->isBranchReady($dev_branch));
+        $devBranch = $this->pscale->getDevelopmentBranch();
 
         // Get a username and password to connect to the new dev branch
         $this->line('Obtaining credentials to development branch...');
         try {
-            $connection = $this->pscale->branchPassword($dev_branch);
+            $connection = $this->pscale->branchPassword($devBranch);
         } catch (RequestException $e) {
             return $this->error('Unable to obtain credentials for development branch.');
         }
