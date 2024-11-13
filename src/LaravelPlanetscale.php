@@ -45,7 +45,35 @@ class LaravelPlanetscale
         );
     }
 
-    // ... rest of the existing methods remain the same ...
+    public function deployRequest(string $from): ?int
+    {
+        $response = $this->post('deploy-requests', [
+            'branch' => $from,
+            'into_branch' => config('planetscale.production_branch')
+        ]);
+
+        return ($response->successful()) ? $response->json('number') : null;
+    }
+
+    public function deploymentState(int $number): string
+    {
+        return $this->get("deploy-requests/{$number}")->json('deployment_state');
+    }
+
+    public function completeDeploy(int $number): void
+    {
+        $this->post("deploy-requests/{$number}/deploy");
+    }
+
+    public function deleteBranch(string $name): void
+    {
+        $this->baseRequest()->delete($this->getUrl("branches/{$name}"))->throw();
+    }
+
+    public function runMigrations(): bool
+    {
+        return (App::environment() != 'testing');
+    }
 
     private function getUrl(string $endpoint): string
     {
