@@ -95,7 +95,7 @@ class PscaleMigrateCommand extends BaseCommand
         // Create a deploy request to merge the dev branch back into production
         $this->line('Creating deploy request from development branch...');
         try {
-            $deploy_id = $this->pscale->deployRequest($dev_branch);
+            $deploy_id = $this->pscale->deployRequest($devBranch);
         } catch (RequestException $e) {
             return $this->error('Unable to create the deploy request on Planetscale.');
         }
@@ -125,14 +125,6 @@ class PscaleMigrateCommand extends BaseCommand
 
         if ($deployment_state == 'complete_error')
             return $this->error('An unexcepected error occured during the deployment.');
-
-        //Delete dev branch
-        $this->line('Deleting the development branch...');
-        try {
-            $this->pscale->deleteBranch($dev_branch);
-        } catch (RequestException $e) {
-            return $this->error('The deployment was successful, but we were unable to delete the dev branch afterwards.');
-        }
 
         $this->newLine();
         $this->info('Migrations successfully applied to production branch!');
