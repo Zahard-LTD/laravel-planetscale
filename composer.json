@@ -1,12 +1,11 @@
 {
-    "name": "x7media/laravel-planetscale",
+    "name": "zahard/laravel-planetscale",
     "description": "A package for managing Laravel database migrations with Planetscale databases.",
     "license": "MIT",
     "authors": [
         {
-            "name": "X7 Media, LLC",
-            "email": "info@x7media.com",
-            "homepage": "http://x7media.com"
+            "name": "Zahard LTD",
+            "email": "eb@zahard.io"
         }
     ],
     "homepage": "https://github.com/x7media/laravel-planetscale",
