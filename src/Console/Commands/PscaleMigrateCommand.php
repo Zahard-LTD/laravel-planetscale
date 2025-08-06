@@ -150,9 +150,10 @@ class PscaleMigrateCommand extends BaseCommand
             config([
                 "database.connections.{$connectionName}.read.host" => [$connection->host],
                 "database.connections.{$connectionName}.write.host" => [$connection->host],
-                "database.connections.{$connectionName}.database" => $connection->database,
-                "database.connections.{$connectionName}.username" => $connection->username,
-                "database.connections.{$connectionName}.password" => $connection->password,
+                "database.connections.{$connectionName}.read.user" => $connection->username,
+                "database.connections.{$connectionName}.read.password" => $connection->password,
+                "database.connections.{$connectionName}.write.user" => $connection->username,
+                "database.connections.{$connectionName}.write.password" => $connection->password,
             ]);
         } else {
             // Handle standard connections
@@ -167,16 +168,19 @@ class PscaleMigrateCommand extends BaseCommand
         app('db')->extend($connectionName, function ($config, $name) use ($connection, $hasReadWriteSeparation) {
             if ($hasReadWriteSeparation) {
                 // Handle read/write separated connections
-                $config['read']['host'] = [$connection->host];
-                $config['write']['host'] = [$connection->host];
+                $config['read']['host'] = $connection->host;
+                $config['write']['host'] = $connection->host;
+                $config['read']['user'] = $connection->username;
+                $config['read']['password'] = $connection->password;
+                $config['write']['user'] = $connection->username;
+                $config['write']['password'] = $connection->password;
             } else {
                 // Handle standard connections
                 $config['host'] = $connection->host;
+                $config['database'] = $connection->database;
+                $config['username'] = $connection->username;
+                $config['password'] = $connection->password;
             }
-
-            $config['database'] = $connection->database;
-            $config['username'] = $connection->username;
-            $config['password'] = $connection->password;
 
             return app('db.factory')->make($config, $name);
         });
