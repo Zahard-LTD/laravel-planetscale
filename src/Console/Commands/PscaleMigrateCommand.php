@@ -141,15 +141,39 @@ class PscaleMigrateCommand extends BaseCommand
             return false;
         }
 
-        config([
-            "database.connections.{$connectionName}.host" => $connection->host,
-            "database.connections.{$connectionName}.database" => $connection->database,
-            "database.connections.{$connectionName}.username" => $connection->username,
-            "database.connections.{$connectionName}.password" => $connection->password,
-        ]);
+        // Check if the connection uses read/write separation
+        $hasReadWriteSeparation = !is_null(config("database.connections.{$connectionName}.read")) ||
+            !is_null(config("database.connections.{$connectionName}.write"));
 
-        app('db')->extend($connectionName, function ($config, $name) use ($connection) {
-            $config['host'] = $connection->host;
+        if ($hasReadWriteSeparation) {
+            // Handle read/write separated connections
+            config([
+                "database.connections.{$connectionName}.read.host" => [$connection->host],
+                "database.connections.{$connectionName}.write.host" => [$connection->host],
+                "database.connections.{$connectionName}.database" => $connection->database,
+                "database.connections.{$connectionName}.username" => $connection->username,
+                "database.connections.{$connectionName}.password" => $connection->password,
+            ]);
+        } else {
+            // Handle standard connections
+            config([
+                "database.connections.{$connectionName}.host" => $connection->host,
+                "database.connections.{$connectionName}.database" => $connection->database,
+                "database.connections.{$connectionName}.username" => $connection->username,
+                "database.connections.{$connectionName}.password" => $connection->password,
+            ]);
+        }
+
+        app('db')->extend($connectionName, function ($config, $name) use ($connection, $hasReadWriteSeparation) {
+            if ($hasReadWriteSeparation) {
+                // Handle read/write separated connections
+                $config['read']['host'] = [$connection->host];
+                $config['write']['host'] = [$connection->host];
+            } else {
+                // Handle standard connections
+                $config['host'] = $connection->host;
+            }
+
             $config['database'] = $connection->database;
             $config['username'] = $connection->username;
             $config['password'] = $connection->password;
