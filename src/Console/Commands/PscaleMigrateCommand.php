@@ -150,9 +150,11 @@ class PscaleMigrateCommand extends BaseCommand
             config([
                 "database.connections.{$connectionName}.read.host" => [$connection->host],
                 "database.connections.{$connectionName}.write.host" => [$connection->host],
-                "database.connections.{$connectionName}.read.user" => $connection->username,
+                "database.connections.{$connectionName}.read.database" => $connection->database,
+                "database.connections.{$connectionName}.write.database" => $connection->database,
+                "database.connections.{$connectionName}.read.username" => $connection->username,
                 "database.connections.{$connectionName}.read.password" => $connection->password,
-                "database.connections.{$connectionName}.write.user" => $connection->username,
+                "database.connections.{$connectionName}.write.username" => $connection->username,
                 "database.connections.{$connectionName}.write.password" => $connection->password,
             ]);
         } else {
@@ -170,9 +172,11 @@ class PscaleMigrateCommand extends BaseCommand
                 // Handle read/write separated connections
                 $config['read']['host'] = $connection->host;
                 $config['write']['host'] = $connection->host;
-                $config['read']['user'] = $connection->username;
+                $config['read']['database'] = $connection->database;
+                $config['write']['database'] = $connection->database;
+                $config['read']['username'] = $connection->username;
                 $config['read']['password'] = $connection->password;
-                $config['write']['user'] = $connection->username;
+                $config['write']['username'] = $connection->username;
                 $config['write']['password'] = $connection->password;
             } else {
                 // Handle standard connections
