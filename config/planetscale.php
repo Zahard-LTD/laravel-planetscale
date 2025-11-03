@@ -5,6 +5,8 @@ return [
 
     'production_branch' => env('PLANETSCALE_PRODUCTION_BRANCH', 'main'),
 
+    'development_branch' => env('PLANETSCALE_DEVELOPMENT_BRANCH'),
+
     'database' => env('DB_DATABASE'),
 
     /*

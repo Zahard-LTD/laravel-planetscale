@@ -56,11 +56,16 @@ class PscaleMigrateCommand extends BaseCommand
 
     private function branch()
     {
-        // create the development branch
         $this->line('Creating development branch to run migrations on...');
         $devBranch = $this->pscale->getDevelopmentBranch();
+        $productionBranch = config('planetscale.production_branch');
 
-        // Get a username and password to connect to the new dev branch
+        try {
+            $this->pscale->ensureBranchExists($devBranch, $productionBranch);
+        } catch (RequestException $e) {
+            return $this->error('Unable to create or verify development branch.');
+        }
+
         $this->line('Obtaining credentials to development branch...');
         try {
             $connection = $this->pscale->branchPassword($devBranch);
@@ -73,9 +78,8 @@ class PscaleMigrateCommand extends BaseCommand
         if (!$this->setDatabaseConnection($connection))
             return;
 
-        // Defer to `artisan migrate` to run the migrations on the dev branch
-        $this->line('Running Laravel migrations on development branch...');
         if ($this->pscale->runMigrations()) {
+            $this->line('Running Laravel migrations on development branch...');
             if ($this->call('migrate', [
                 '--database' => $this->option('database'),
                 '--force' => $this->option('force'),
@@ -92,7 +96,12 @@ class PscaleMigrateCommand extends BaseCommand
             $this->warn("Testing detected. Skip running `php artisan migrate`...");
         }
 
-        // Create a deploy request to merge the dev branch back into production
+        if ($this->hasNoPendingMigrations() && $this->pscale->runMigrations()) {
+            $this->newLine();
+            $this->info('No pending migrations on development branch. Skipping deploy request.');
+            return;
+        }
+
         $this->line('Creating deploy request from development branch...');
         try {
             $deploy_id = $this->pscale->deployRequest($devBranch);

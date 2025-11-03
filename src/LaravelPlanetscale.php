@@ -14,24 +14,61 @@ class LaravelPlanetscale
 {
     protected string $baseUrl = 'https://api.planetscale.com/v1';
 
-    public function __construct(private ?string $service_token_id = '', private ?string $service_token = '')
-    {
-    }
+    public function __construct(private ?string $service_token_id = '', private ?string $service_token = '') {}
 
     public function getDevelopmentBranch(): string
     {
+        $developmentBranch = config('planetscale.development_branch');
+        if ($developmentBranch) {
+            return $developmentBranch;
+        }
+
         $productionBranch = config('planetscale.production_branch');
 
         return match ($productionBranch) {
             'main' => 'dev',
             'staging' => 'staging-dev',
-            default => throw new Exception('Unknown production branch'),
+            default => "{$productionBranch}-dev",
         };
     }
 
     public function isBranchReady(string $name): bool
     {
         return $this->get("branches/{$name}")->json('ready');
+    }
+
+    public function branchExists(string $name): bool
+    {
+        try {
+            $this->get("branches/{$name}");
+            return true;
+        } catch (Exception $e) {
+            return false;
+        }
+    }
+
+    public function createBranch(string $name, string $parent): void
+    {
+        $this->post('branches', [
+            'name' => $name,
+            'parent_branch' => $parent,
+        ]);
+    }
+
+    public function ensureBranchExists(string $name, string $parent): void
+    {
+        if ($this->branchExists($name)) {
+            while (!$this->isBranchReady($name)) {
+                sleep(2);
+            }
+            return;
+        }
+
+        $this->createBranch($name, $parent);
+
+        while (!$this->isBranchReady($name)) {
+            sleep(2);
+        }
     }
 
     public function branchPassword(string $for): Connection
