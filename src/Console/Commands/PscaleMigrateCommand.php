@@ -43,6 +43,13 @@ class PscaleMigrateCommand extends BaseCommand
             return 0;
         }
 
+        $productionBranch = config('planetscale.production_branch');
+
+        if (Str::startsWith($productionBranch, 'ZAH-')) {
+            $this->info('Development branch detected. Running migrations directly without deploy request.');
+            return $this->runDirectMigration();
+        }
+
         $this->branch();
 
         return ($this->hasError) ? 1 : 0;
@@ -52,6 +59,34 @@ class PscaleMigrateCommand extends BaseCommand
     {
         parent::error($string, $verbosity);
         $this->hasError = true;
+    }
+
+    private function runDirectMigration(): int
+    {
+        if ($this->pscale->runMigrations()) {
+            $this->line('Running Laravel migrations directly on branch...');
+            if ($this->call('migrate', [
+                '--database' => $this->option('database'),
+                '--force' => $this->option('force'),
+                '--path' => $this->option('path'),
+                '--realpath' => $this->option('realpath'),
+                '--schema-path' => $this->option('schema-path'),
+                '--pretend' => $this->option('pretend'),
+                '--seed' => $this->option('seed'),
+                '--seeder' => $this->option('seeder'),
+                '--step' => $this->option('step'),
+            ]) > 0) {
+                $this->error('An error occured while trying to complete the migration.');
+                return 1;
+            }
+
+            $this->newLine();
+            $this->info('Migrations successfully applied!');
+            return 0;
+        }
+
+        $this->warn("Testing detected. Skip running `php artisan migrate`...");
+        return 0;
     }
 
     private function branch()
@@ -94,12 +129,6 @@ class PscaleMigrateCommand extends BaseCommand
                 return $this->error('An error occured while trying to complete the migration on the development branch.');
         } else {
             $this->warn("Testing detected. Skip running `php artisan migrate`...");
-        }
-
-        if ($this->hasNoPendingMigrations() && $this->pscale->runMigrations()) {
-            $this->newLine();
-            $this->info('No pending migrations on development branch. Skipping deploy request.');
-            return;
         }
 
         $this->line('Creating deploy request from development branch...');
