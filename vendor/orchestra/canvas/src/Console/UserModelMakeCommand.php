@@ -2,10 +2,13 @@
 
 namespace Orchestra\Canvas\Console;
 
+use Composer\InstalledVersions;
 use Orchestra\Canvas\Core\Commands\GeneratorCommand;
 use Orchestra\Canvas\Core\Concerns\ResolvesPresetStubs;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Input\InputOption;
+
+use function Orchestra\Sidekick\Filesystem\join_paths;
 
 #[AsCommand(name: 'make:user-model', description: 'Create the User model class')]
 class UserModelMakeCommand extends GeneratorCommand
@@ -20,6 +23,30 @@ class UserModelMakeCommand extends GeneratorCommand
     protected $type = 'Model';
 
     /**
+     * Build the class with the given name.
+     *
+     * @param  string  $name
+     * @return string
+     *
+     * @throws \Illuminate\Contracts\Filesystem\FileNotFoundException
+     */
+    #[\Override]
+    protected function buildClass($name)
+    {
+        $stub = parent::buildClass($name);
+
+        if (! InstalledVersions::isInstalled('laravel/sanctum')) {
+            $stub = str_replace(
+                '    use HasApiTokens, HasFactory, Notifiable;'.PHP_EOL,
+                '    use HasFactory, Notifiable;'.PHP_EOL,
+                $stub
+            );
+        }
+
+        return $stub;
+    }
+
+    /**
      * Get the stub file for the generator.
      *
      * @return string
@@ -27,7 +54,7 @@ class UserModelMakeCommand extends GeneratorCommand
     #[\Override]
     protected function getStub()
     {
-        return $this->resolveStubPath('/stubs/user-model.stub');
+        return $this->resolveStubPath(join_paths('stubs', 'user-model.stub'));
     }
 
     /**
@@ -38,7 +65,7 @@ class UserModelMakeCommand extends GeneratorCommand
      */
     protected function resolveDefaultStubPath($stub)
     {
-        return __DIR__.$stub;
+        return join_paths(__DIR__, $stub);
     }
 
     /**

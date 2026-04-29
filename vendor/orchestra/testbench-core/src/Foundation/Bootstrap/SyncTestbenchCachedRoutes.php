@@ -5,7 +5,7 @@ namespace Orchestra\Testbench\Foundation\Bootstrap;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\Collection;
 
-use function Orchestra\Sidekick\join_paths;
+use function Orchestra\Sidekick\Filesystem\join_paths;
 
 class SyncTestbenchCachedRoutes
 {
@@ -17,11 +17,14 @@ class SyncTestbenchCachedRoutes
      */
     public function bootstrap(Application $app): void
     {
-        /** @var \Illuminate\Routing\Router $router */
+        /**
+         * @var \Illuminate\Foundation\Application&\Illuminate\Contracts\Foundation\Application $app
+         * @var \Illuminate\Routing\Router $router
+         */
         $router = $app->make('router');
 
         /** @phpstan-ignore argument.type */
-        Collection::make(glob($app->basePath(join_paths('routes', 'testbench-*.php'))))
+        (new Collection(glob($app->basePath(join_paths('routes', 'testbench-*.php')))))
             ->each(static function ($routeFile) use ($app, $router) { // @phpstan-ignore closure.unusedUse, closure.unusedUse
                 require $routeFile;
             });

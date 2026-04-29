@@ -5,8 +5,6 @@ namespace Orchestra\Testbench\Console;
 use Orchestra\Testbench\Foundation\Console\Kernel as ConsoleKernel;
 use Throwable;
 
-use function Orchestra\Sidekick\join_paths;
-
 /**
  * @codeCoverageIgnore
  */
@@ -20,18 +18,6 @@ final class Kernel extends ConsoleKernel
     protected $commands = [];
 
     /**
-     * Register the commands for the application.
-     *
-     * @return void
-     */
-    protected function commands()
-    {
-        if (is_file($console = base_path(join_paths('routes', 'console.php')))) {
-            require $console;
-        }
-    }
-
-    /**
      * Report the exception to the exception handler.
      *
      * @param  \Throwable  $e
@@ -39,8 +25,20 @@ final class Kernel extends ConsoleKernel
      *
      * @throws \Throwable
      */
+    #[\Override]
     protected function reportException(Throwable $e)
     {
         throw $e;
+    }
+
+    /**
+     * Determine if the kernel should discover commands.
+     *
+     * @return bool
+     */
+    #[\Override]
+    protected function shouldDiscoverCommands()
+    {
+        return \get_class($this) === __CLASS__;
     }
 }

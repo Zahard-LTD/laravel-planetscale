@@ -3,6 +3,10 @@
 namespace Orchestra\Canvas\Core\Concerns;
 
 use Illuminate\Support\Str;
+use Orchestra\Canvas\Core\Presets\Preset;
+use Symfony\Component\Finder\Finder;
+
+use function Orchestra\Sidekick\Filesystem\join_paths;
 
 trait UsesGeneratorOverrides
 {
@@ -15,7 +19,7 @@ trait UsesGeneratorOverrides
 
         $model = str_replace('/', '\\', $model);
 
-        if (Str::startsWith($model, $this->rootNamespace())) {
+        if (str_starts_with($model, $this->rootNamespace())) {
             return $model;
         }
 
@@ -29,7 +33,7 @@ trait UsesGeneratorOverrides
     {
         $name = Str::replaceFirst($this->rootNamespace(), '', $name);
 
-        return $this->getGeneratorSourcePath().'/'.str_replace('\\', '/', $name).'.php';
+        return join_paths($this->getGeneratorSourcePath(), str_replace('\\', '/', $name).'.php');
     }
 
     /**
@@ -55,6 +59,68 @@ trait UsesGeneratorOverrides
     {
         $views = $this->generatorPreset()->viewPath();
 
-        return $views.($path ? DIRECTORY_SEPARATOR.$path : $path);
+        return join_paths($views, $path);
     }
+
+    /**
+     * Get a list of possible model names.
+     *
+     * @return array<int, string>
+     */
+    protected function findAvailableModelsUsingCanvas(): array
+    {
+        $sourcePath = $this->generatorPreset()->sourcePath();
+
+        $modelPath = is_dir(join_paths($sourcePath, 'Models')) ? join_paths($sourcePath, 'Models') : $sourcePath;
+
+        return collect((new Finder)->files()->depth(0)->in($modelPath))
+            ->map(fn ($file) => $file->getBasename('.php'))
+            ->sort()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Get a list of possible model names.
+     *
+     * @return array<int, string>
+     *
+     * @deprecated 10.1.0 Use `findAvailableModelsUsingCanvas()` instead.
+     */
+    protected function possibleModelsUsingCanvas(): array
+    {
+        return $this->findAvailableModelsUsingCanvas();
+    }
+
+    /**
+     * Get a list of possible event names.
+     *
+     * @return array<int, string>
+     */
+    protected function possibleEventsUsingCanvas(): array
+    {
+        $eventPath = join_paths($this->generatorPreset()->sourcePath(), 'Events');
+
+        if (! is_dir($eventPath)) {
+            return [];
+        }
+
+        return collect((new Finder)->files()->depth(0)->in($eventPath))
+            ->map(fn ($file) => $file->getBasename('.php'))
+            ->sort()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Get the root namespace for the class.
+     *
+     * @return string
+     */
+    abstract protected function rootNamespace();
+
+    /**
+     * Resolve the generator preset.
+     */
+    abstract protected function generatorPreset(): Preset;
 }

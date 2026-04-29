@@ -6,8 +6,8 @@ use Illuminate\Filesystem\Filesystem;
 use Illuminate\Foundation\PackageManifest as IlluminatePackageManifest;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
-use RuntimeException;
 
+use function Orchestra\Sidekick\is_testbench_cli;
 use function Orchestra\Testbench\package_path;
 
 /**
@@ -27,7 +27,8 @@ class PackageManifest extends IlluminatePackageManifest
      *
      * @var array<int, string>
      */
-    protected $requiredPackages = [
+    protected array $requiredPackages = [
+        'laravel/dusk',
         'spatie/laravel-ray',
     ];
 
@@ -50,7 +51,7 @@ class PackageManifest extends IlluminatePackageManifest
      * @param  object|null  $testbench
      * @return void
      */
-    public static function swap($app, $testbench = null)
+    public static function swap($app, $testbench = null): void
     {
         /** @var \Illuminate\Foundation\PackageManifest $base */
         $base = $app->make(IlluminatePackageManifest::class);
@@ -82,7 +83,7 @@ class PackageManifest extends IlluminatePackageManifest
      */
     public function requires(...$packages)
     {
-        $this->requiredPackages = array_merge($this->requiredPackages, Arr::wrap($packages));
+        $this->requiredPackages = array_merge($this->requiredPackages, Arr::wrap($packages)); // @phpstan-ignore assign.propertyType
 
         return $this;
     }
@@ -99,7 +100,7 @@ class PackageManifest extends IlluminatePackageManifest
 
         $requires = $this->requiredPackages;
 
-        return Collection::make(parent::getManifest())
+        return (new Collection(parent::getManifest()))
             ->reject(static fn ($configuration, $package) => ($ignoreAll && ! \in_array($package, $requires)) || \in_array($package, $ignore))
             ->map(static function ($configuration, $package) {
                 foreach ($configuration['providers'] ?? [] as $provider) {
@@ -112,11 +113,8 @@ class PackageManifest extends IlluminatePackageManifest
             })->filter()->all();
     }
 
-    /**
-     * Get all of the package names that should be ignored.
-     *
-     * @return array
-     */
+    /** {@inheritDoc} */
+    #[\Override]
     protected function packagesToIgnore()
     {
         return [];
@@ -127,25 +125,30 @@ class PackageManifest extends IlluminatePackageManifest
      *
      * @return array
      */
-    protected function providersFromRoot()
+    protected function providersFromRoot(): array
     {
-        $composerFile = package_path('composer.json');
+        $package = $this->providersFromTestbench();
 
-        if (! \defined('TESTBENCH_CORE') || ! is_file($composerFile)) {
-            return [];
+        return \is_array($package) ? [
+            $this->format($package['name']) => $package['extra']['laravel'] ?? [],
+        ] : [];
+    }
+
+    /**
+     * Get testbench root composer file.
+     *
+     * @return array{name: string, extra?: array{laravel?: array}}|null
+     */
+    protected function providersFromTestbench(): ?array
+    {
+        if (is_testbench_cli() && is_file($composerFile = package_path('composer.json'))) {
+            /** @var array{name: string, extra?: array{laravel?: array}} $composer */
+            $composer = $this->files->json($composerFile);
+
+            return $composer;
         }
 
-        $package = transform(file_get_contents($composerFile), static function ($json) use ($composerFile) {
-            if (json_validate($json) === false) {
-                throw new RuntimeException("Unable to parse [{$composerFile}] file");
-            }
-
-            return json_decode($json, true);
-        });
-
-        return [
-            $this->format($package['name']) => $package['extra']['laravel'] ?? [],
-        ];
+        return null;
     }
 
     /** {@inheritDoc} */
@@ -153,7 +156,7 @@ class PackageManifest extends IlluminatePackageManifest
     protected function write(array $manifest)
     {
         parent::write(
-            Collection::make($manifest)->merge($this->providersFromRoot())->filter()->all()
+            (new Collection($manifest))->merge($this->providersFromRoot())->filter()->all()
         );
     }
 }

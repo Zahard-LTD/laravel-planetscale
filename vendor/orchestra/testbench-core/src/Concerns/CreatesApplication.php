@@ -6,10 +6,13 @@ use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Contracts\Console\Kernel as ConsoleKernelContract;
 use Illuminate\Contracts\Http\Kernel as HttpKernelContract;
 use Illuminate\Foundation\Application;
+use Illuminate\Foundation\Configuration\ApplicationBuilder;
+use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Facade;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\ServiceProvider;
 use Orchestra\Testbench\Attributes\DefineEnvironment;
 use Orchestra\Testbench\Attributes\RequiresEnv;
 use Orchestra\Testbench\Attributes\RequiresLaravel;
@@ -24,13 +27,11 @@ use Orchestra\Testbench\Features\TestingFeature;
 use Orchestra\Testbench\Foundation\PackageManifest;
 use PHPUnit\Framework\TestCase as PHPUnitTestCase;
 
-use function Orchestra\Testbench\after_resolving;
+use function Orchestra\Sidekick\after_resolving;
 use function Orchestra\Testbench\default_skeleton_path;
 use function Orchestra\Testbench\refresh_router_lookups;
 
 /**
- * @api
- *
  * @property bool|null $enablesPackageDiscoveries
  * @property bool|null $loadEnvironmentVariables
  */
@@ -42,6 +43,8 @@ trait CreatesApplication
     /**
      * Get the application's base path.
      *
+     * @api
+     *
      * @return string
      */
     public static function applicationBasePath()
@@ -51,6 +54,8 @@ trait CreatesApplication
 
     /**
      * Ignore package discovery from.
+     *
+     * @api
      *
      * @return array<int, string>
      */
@@ -62,6 +67,8 @@ trait CreatesApplication
     /**
      * Get the application timezone.
      *
+     * @api
+     *
      * @param  \Illuminate\Foundation\Application  $app
      * @return string|null
      */
@@ -72,6 +79,8 @@ trait CreatesApplication
 
     /**
      * Override application bindings.
+     *
+     * @api
      *
      * @param  \Illuminate\Foundation\Application  $app
      * @return array<string|class-string, string|class-string>
@@ -99,6 +108,8 @@ trait CreatesApplication
     /**
      * Get application aliases.
      *
+     * @api
+     *
      * @param  \Illuminate\Foundation\Application  $app
      * @return array<string, class-string>
      */
@@ -110,8 +121,10 @@ trait CreatesApplication
     /**
      * Override application aliases.
      *
+     * @api
+     *
      * @param  \Illuminate\Foundation\Application  $app
-     * @return array<string, class-string>
+     * @return array<string, class-string|false>
      */
     protected function overrideApplicationAliases($app)
     {
@@ -128,21 +141,26 @@ trait CreatesApplication
      */
     final protected function resolveApplicationAliases($app): array
     {
-        $aliases = Collection::make(
+        $aliases = (new Collection(
             $this->getApplicationAliases($app)
-        )->merge($this->getPackageAliases($app));
+        ))->merge($this->getPackageAliases($app));
 
         if (! empty($overrides = $this->overrideApplicationAliases($app))) {
             $aliases->transform(static function ($alias, $name) use ($overrides) {
-                return $overrides[$name] ?? $alias;
+                return with($overrides[$name] ?? $alias, static function ($alias) {
+                    return $alias !== false ? $alias : null;
+                });
             });
         }
 
+        /** @var \Illuminate\Support\Collection<string, class-string> $aliases */
         return $aliases->filter()->all();
     }
 
     /**
      * Get package aliases.
+     *
+     * @api
      *
      * @param  \Illuminate\Foundation\Application  $app
      * @return array<string, class-string>
@@ -155,6 +173,8 @@ trait CreatesApplication
     /**
      * Get package bootstrapper.
      *
+     * @api
+     *
      * @param  \Illuminate\Foundation\Application  $app
      * @return array<int, class-string>
      */
@@ -166,19 +186,23 @@ trait CreatesApplication
     /**
      * Get application providers.
      *
+     * @api
+     *
      * @param  \Illuminate\Foundation\Application  $app
      * @return array<int, class-string>
      */
     protected function getApplicationProviders($app)
     {
-        return $app['config']['app.providers'];
+        return $app['config']['app.providers'] ?? ServiceProvider::defaultProviders()->toArray();
     }
 
     /**
      * Override application aliases.
      *
+     * @api
+     *
      * @param  \Illuminate\Foundation\Application  $app
-     * @return array<class-string, class-string>
+     * @return array<class-string, class-string|false>
      */
     protected function overrideApplicationProviders($app)
     {
@@ -195,21 +219,27 @@ trait CreatesApplication
      */
     final protected function resolveApplicationProviders($app): array
     {
-        $providers = Collection::make(
+        /** @var \Illuminate\Support\Collection<int, class-string> $providers */
+        $providers = (new Collection(
             RegisterProviders::mergeAdditionalProvidersForTestbench($this->getApplicationProviders($app))
-        )->merge($this->getPackageProviders($app));
+        ))->merge($this->getPackageProviders($app));
 
         if (! empty($overrides = $this->overrideApplicationProviders($app))) {
-            $providers->transform(static function ($provider) use ($overrides) {
-                return $overrides[$provider] ?? $provider;
+            $providers->transform(static function (string $provider) use ($overrides) {
+                return with($overrides[$provider] ?? $provider, static function ($provider) {
+                    return $provider !== false ? $provider : null;
+                });
             });
         }
 
+        /** @phpstan-ignore return.type */
         return $providers->filter()->values()->all();
     }
 
     /**
      * Get package providers.
+     *
+     * @api
      *
      * @param  \Illuminate\Foundation\Application  $app
      * @return array<int, class-string>
@@ -232,25 +262,9 @@ trait CreatesApplication
     }
 
     /**
-     * Resolve the application's base path (deprecated).
-     *
-     * @api
-     *
-     * @return string|null
-     *
-     * @deprecated 6.22.0 Use `applicationBasePath()` static method instead.
-     */
-    protected function getBasePath()
-    {
-        trigger_deprecation('orchestra/testbench-core', '6.22.0', 'Use `%s` static method instead.', 'applicationBasePath()');
-
-        return static::applicationBasePath();
-    }
-
-    /**
      * Creates the application.
      *
-     * Needs to be implemented by subclasses.
+     * @internal
      *
      * @return \Illuminate\Foundation\Application
      */
@@ -268,8 +282,10 @@ trait CreatesApplication
         $this->resolveApplicationEnvironmentVariables($app);
         $this->resolveApplicationConfiguration($app);
         $this->resolveApplicationHttpKernel($app);
+        $this->resolveApplicationHttpMiddlewares($app);
         $this->resolveApplicationConsoleKernel($app);
         $this->resolveApplicationBootstrappers($app);
+        $this->refreshApplicationRouteNameLookups($app);
 
         return $app;
     }
@@ -277,20 +293,38 @@ trait CreatesApplication
     /**
      * Create the default application implementation.
      *
+     * @internal
+     *
      * @return \Illuminate\Foundation\Application
      */
     final protected function resolveDefaultApplication()
     {
-        return new Application($this->getApplicationBasePath());
+        return (new ApplicationBuilder(new Application($this->getApplicationBasePath())))
+            ->withProviders()
+            ->withMiddleware(static function ($middleware) {
+                //
+            })
+            ->withCommands()
+            ->create();
     }
 
     /**
      * Resolve application implementation.
      *
+     * @api
+     *
      * @return \Illuminate\Foundation\Application
      */
     protected function resolveApplication()
     {
+        static::$cacheApplicationBootstrapFile ??= $this->getApplicationBootstrapFile('app.php');
+
+        if (\is_string(static::$cacheApplicationBootstrapFile)) {
+            $APP_BASE_PATH = $this->getApplicationBasePath();
+
+            return require static::$cacheApplicationBootstrapFile;
+        }
+
         return $this->resolveDefaultApplication();
     }
 
@@ -327,6 +361,8 @@ trait CreatesApplication
     /**
      * Resolve application core environment variables implementation.
      *
+     * @internal
+     *
      * @param  \Illuminate\Foundation\Application  $app
      * @return void
      */
@@ -359,6 +395,8 @@ trait CreatesApplication
     /**
      * Resolve application core configuration implementation.
      *
+     * @internal
+     *
      * @param  \Illuminate\Foundation\Application  $app
      * @return void
      */
@@ -382,9 +420,7 @@ trait CreatesApplication
 
         tap($app['config'], function ($config) use ($app) {
             if (! $app->bound('env')) {
-                $app->detectEnvironment(static function () use ($config) {
-                    return $config->get('app.env', 'workbench');
-                });
+                $app->detectEnvironment(static fn () => $config->get('app.env', 'workbench'));
             }
 
             if (\is_string($bootstrapProviderPath = $this->getApplicationBootstrapFile('providers.php'))) {
@@ -406,20 +442,22 @@ trait CreatesApplication
     /**
      * Resolve application core implementation.
      *
+     * @internal
+     *
      * @param  \Illuminate\Foundation\Application  $app
      * @return void
      */
     protected function resolveApplicationCore($app)
     {
         if ($this->isRunningTestCase()) {
-            $app->detectEnvironment(static function () {
-                return 'testing';
-            });
+            $app->detectEnvironment(static fn () => 'testing');
         }
     }
 
     /**
      * Resolve application Console Kernel implementation.
+     *
+     * @api
      *
      * @param  \Illuminate\Foundation\Application  $app
      * @return void
@@ -432,6 +470,8 @@ trait CreatesApplication
     /**
      * Resolve application HTTP Kernel implementation.
      *
+     * @api
+     *
      * @param  \Illuminate\Foundation\Application  $app
      * @return void
      */
@@ -441,7 +481,29 @@ trait CreatesApplication
     }
 
     /**
+     * Resolve application HTTP default middlewares.
+     *
+     * @internal
+     *
+     * @param  \Illuminate\Foundation\Application  $app
+     * @return void
+     */
+    protected function resolveApplicationHttpMiddlewares($app)
+    {
+        after_resolving($app, HttpKernelContract::class, function ($kernel, $app) {
+            /** @var \Illuminate\Foundation\Http\Kernel $kernel */
+            $middleware = new Middleware;
+
+            $kernel->setGlobalMiddleware($middleware->getGlobalMiddleware());
+            $kernel->setMiddlewareGroups($middleware->getMiddlewareGroups());
+            $kernel->setMiddlewareAliases($middleware->getMiddlewareAliases());
+        });
+    }
+
+    /**
      * Resolve application HTTP exception handler.
+     *
+     * @api
      *
      * @param  \Illuminate\Foundation\Application  $app
      * @return void
@@ -454,16 +516,18 @@ trait CreatesApplication
     /**
      * Resolve application bootstrapper.
      *
+     * @internal
+     *
      * @param  \Illuminate\Foundation\Application  $app
      * @return void
      */
     protected function resolveApplicationBootstrappers($app)
     {
-        if ($this instanceof PHPUnitTestCase) {
-            $app->make('Orchestra\Testbench\Bootstrap\HandleExceptions', ['testbench' => $this])->bootstrap($app);
-        } else {
-            $app->make('Illuminate\Foundation\Bootstrap\HandleExceptions')->bootstrap($app);
-        }
+        $app->make(
+            $this->isRunningTestCase()
+                ? 'Orchestra\Testbench\Bootstrap\HandleExceptions'
+                : 'Illuminate\Foundation\Bootstrap\HandleExceptions'
+        )->bootstrap($app);
 
         $app->make('Illuminate\Foundation\Bootstrap\RegisterFacades')->bootstrap($app);
         $app->make('Illuminate\Foundation\Bootstrap\SetRequestForConsole')->bootstrap($app);
@@ -486,7 +550,8 @@ trait CreatesApplication
             attribute: function () use ($app) {
                 $this->parseTestMethodAttributes($app, WithImmutableDates::class); /** @phpstan-ignore method.notFound */
                 $this->parseTestMethodAttributes($app, DefineEnvironment::class); /** @phpstan-ignore method.notFound */
-            }
+            },
+            pest: fn () => $this->defineEnvironmentUsingPest($app), /** @phpstan-ignore method.notFound */
         );
 
         $this->resolveApplicationRateLimiting($app);
@@ -508,12 +573,12 @@ trait CreatesApplication
         }
 
         $app->make(ConsoleKernelContract::class)->bootstrap();
-
-        $this->refreshApplicationRouteNameLookups($app);
     }
 
     /**
      * Refresh route name lookup for the application.
+     *
+     * @internal
      *
      * @param  \Illuminate\Foundation\Application  $app
      * @return void
@@ -533,14 +598,18 @@ trait CreatesApplication
     /**
      * Resolve application rate limiting configuration.
      *
+     * @api
+     *
      * @param  \Illuminate\Foundation\Application  $app
      * @return void
      */
     protected function resolveApplicationRateLimiting($app)
     {
-        RateLimiter::for(
-            'api', static fn (Request $request) => Limit::perMinute(60)->by($request->user()?->id ?: $request->ip())
-        );
+        after_resolving($app, 'cache.store', function () {
+            RateLimiter::for(
+                'api', static fn (Request $request) => Limit::perMinute(60)->by($request->user()?->id ?: $request->ip())
+            );
+        });
     }
 
     /**
@@ -559,6 +628,8 @@ trait CreatesApplication
     /**
      * Define environment setup.
      *
+     * @api
+     *
      * @param  \Illuminate\Foundation\Application  $app
      * @return void
      */
@@ -570,8 +641,12 @@ trait CreatesApplication
     /**
      * Define environment setup.
      *
+     * @api
+     *
      * @param  \Illuminate\Foundation\Application  $app
      * @return void
+     *
+     * @deprecated 10.0 Use "defineEnvironment()" instead.
      */
     protected function getEnvironmentSetUp($app)
     {

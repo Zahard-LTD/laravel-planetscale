@@ -7,7 +7,7 @@ use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Symfony\Component\Console\Attribute\AsCommand;
 
-use function Orchestra\Sidekick\join_paths;
+use function Orchestra\Sidekick\Filesystem\join_paths;
 
 #[AsCommand(name: 'package:create-sqlite-db', description: 'Create sqlite database file')]
 class CreateSqliteDbCommand extends Command
@@ -29,7 +29,6 @@ class CreateSqliteDbCommand extends Command
      */
     public function handle(Filesystem $filesystem)
     {
-        $workingPath = $this->laravel->basePath();
         $databasePath = $this->laravel->databasePath();
 
         /** @var bool $force */

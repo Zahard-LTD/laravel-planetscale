@@ -4,6 +4,7 @@ namespace Orchestra\Workbench\Console;
 
 use Composer\InstalledVersions;
 use Illuminate\Console\Command;
+use Illuminate\Contracts\Console\PromptsForMissingInput;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Collection;
 use Orchestra\Testbench\Foundation\Console\Actions\GeneratesFile;
@@ -14,14 +15,14 @@ use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 
-use function Orchestra\Sidekick\join_paths;
+use function Laravel\Prompts\confirm;
+use function Laravel\Prompts\select;
+use function Orchestra\Sidekick\Filesystem\join_paths;
 use function Orchestra\Testbench\package_path;
 
 #[AsCommand(name: 'workbench:install', description: 'Setup Workbench for package development')]
-class InstallCommand extends Command
+class InstallCommand extends Command implements PromptsForMissingInput
 {
-    use Concerns\InteractsWithFiles;
-
     /**
      * The `testbench.yaml` default configuration file.
      */
@@ -48,31 +49,57 @@ class InstallCommand extends Command
      */
     public function handle(Filesystem $filesystem)
     {
-        if (! $this->option('skip-devtool')) {
-            $devtool = match (true) {
-                \is_bool($this->option('devtool')) => $this->option('devtool'),
-                default => $this->components->confirm('Install Workbench DevTool?', true),
-            };
+        $devtool = match (true) {
+            \is_bool($this->option('devtool')) => $this->option('devtool'),
+            default => $this->components->confirm('Install Workbench DevTool?', true),
+        };
 
-            if ($devtool === true) {
-                $this->call('workbench:devtool', [
-                    '--force' => $this->option('force'),
-                    '--no-install' => true,
-                    '--basic' => $this->option('basic'),
-                ]);
-            }
+        if ($devtool === true) {
+            $this->call('workbench:devtool', [
+                '--force' => $this->option('force'),
+                '--no-install' => true,
+                '--basic' => $this->option('basic'),
+            ]);
         }
 
         $workingPath = package_path();
 
         $this->copyTestbenchConfigurationFile($filesystem, $workingPath);
         $this->copyTestbenchDotEnvFile($filesystem, $workingPath);
+        $this->prepareWorkbenchDirectories($filesystem, $workingPath);
 
         $this->replaceDefaultLaravelSkeletonInTestbenchConfigurationFile($filesystem, $workingPath);
 
         $this->call('workbench:create-sqlite-db', ['--force' => true]);
 
         return Command::SUCCESS;
+    }
+
+    /**
+     * Prepare workbench directories.
+     */
+    protected function prepareWorkbenchDirectories(Filesystem $filesystem, string $workingPath): void
+    {
+        if (! $this->input->isInteractive()) {
+            return;
+        }
+
+        $workbenchWorkingPath = join_paths($workingPath, 'workbench');
+
+        foreach (['app' => true, 'providers' => false] as $bootstrap => $default) {
+            if (! confirm("Generate `workbench/bootstrap/{$bootstrap}.php` file?", default: $default)) {
+                continue;
+            }
+
+            (new GeneratesFile(
+                filesystem: $filesystem,
+                components: $this->components,
+                force: (bool) $this->option('force'),
+            ))->handle(
+                (string) realpath(join_paths(__DIR__, 'stubs', 'bootstrap', "{$bootstrap}.php")),
+                join_paths($workbenchWorkingPath, 'bootstrap', "{$bootstrap}.php")
+            );
+        }
     }
 
     /**
@@ -108,7 +135,8 @@ class InstallCommand extends Command
             return;
         }
 
-        $choices = Collection::make($this->environmentFiles())
+        /** @var \Illuminate\Support\Collection<int, string> $choices */
+        $choices = (new Collection($this->environmentFiles()))
             ->reject(static fn ($file) => $filesystem->isFile(join_paths($workbenchWorkingPath, $file)))
             ->values();
 
@@ -122,9 +150,9 @@ class InstallCommand extends Command
 
         /** @var string|null $targetEnvironmentFile */
         $targetEnvironmentFile = $this->input->isInteractive()
-            ? $this->components->choice(
+            ? select(
                 "Export '.env' file as?",
-                $choices->prepend('Skip exporting .env')->all()
+                $choices->prepend('Skip exporting .env'), // @phpstan-ignore argument.type
             ) : null;
 
         if (\in_array($targetEnvironmentFile, [null, 'Skip exporting .env'])) {
@@ -164,7 +192,7 @@ class InstallCommand extends Command
             return;
         }
 
-        $this->replaceInFile($filesystem, ["laravel: '@testbench'"], ["laravel: '@testbench-dusk'"], join_paths($workingPath, 'testbench.yaml'));
+        $filesystem->replaceInFile(["laravel: '@testbench'"], ["laravel: '@testbench-dusk'"], join_paths($workingPath, 'testbench.yaml'));
     }
 
     /**
@@ -205,6 +233,24 @@ class InstallCommand extends Command
     }
 
     /**
+     * Prompt the user for any missing arguments.
+     *
+     * @return void
+     */
+    protected function promptForMissingArguments(InputInterface $input, OutputInterface $output)
+    {
+        $devtool = null;
+
+        if (\is_null($input->getOption('devtool'))) {
+            $devtool = confirm('Run Workbench DevTool installation?', true);
+        }
+
+        if (! \is_null($devtool)) {
+            $input->setOption('devtool', $devtool);
+        }
+    }
+
+    /**
      * Get the console command options.
      *
      * @return array
@@ -215,9 +261,6 @@ class InstallCommand extends Command
             ['force', 'f', InputOption::VALUE_NONE, 'Overwrite any existing files'],
             ['devtool', null, InputOption::VALUE_NEGATABLE, 'Run DevTool installation'],
             ['basic', null, InputOption::VALUE_NONE, 'Skipped routes and discovers installation'],
-
-            /** @deprecated */
-            ['skip-devtool', null, InputOption::VALUE_NONE, 'Skipped DevTool installation (deprecated)'],
         ];
     }
 }

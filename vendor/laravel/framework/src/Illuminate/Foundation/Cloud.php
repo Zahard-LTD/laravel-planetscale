@@ -5,8 +5,10 @@ namespace Illuminate\Foundation;
 use Illuminate\Database\Migrations\Migrator;
 use Illuminate\Foundation\Bootstrap\HandleExceptions;
 use Illuminate\Foundation\Bootstrap\LoadConfiguration;
+use Illuminate\Queue\Worker;
 use Monolog\Formatter\JsonFormatter;
 use Monolog\Handler\SocketHandler;
+use PDO;
 
 class Cloud
 {
@@ -28,6 +30,7 @@ class Cloud
                 static::configureDisks($app);
                 static::configureUnpooledPostgresConnection($app);
                 static::ensureMigrationsUseUnpooledConnection($app);
+                static::configureManagedQueues($app);
             },
             HandleExceptions::class => function () use ($app) {
                 static::configureCloudLogging($app);
@@ -82,6 +85,14 @@ class Cloud
                     'host' => str_replace('-pooler', '', $host),
                 ])
             );
+
+            $app['config']->set(
+                'database.connections.pgsql.options',
+                array_merge(
+                    $app['config']->get('database.connections.pgsql.options', []),
+                    [PDO::ATTR_EMULATE_PREPARES => true],
+                ),
+            );
         }
     }
 
@@ -104,6 +115,28 @@ class Cloud
     }
 
     /**
+     * Configure managed queues if applicable.
+     */
+    public static function configureManagedQueues(Application $app): void
+    {
+        if ((int) ($_SERVER['LARAVEL_CLOUD_MANAGED_QUEUES'] ?? 0) === 1) {
+            Worker::$restartable = false;
+
+            $app['config']->set(
+                'queue.connections.sqs.credentials',
+                'ecs'
+            );
+
+            if (isset($_SERVER['LARAVEL_CLOUD_REGION'])) {
+                $app['config']->set(
+                    'queue.connections.sqs.region',
+                    $_SERVER['LARAVEL_CLOUD_REGION']
+                );
+            }
+        }
+    }
+
+    /**
      * Configure the Laravel Cloud log channels.
      */
     public static function configureCloudLogging(Application $app): void
@@ -114,6 +147,7 @@ class Cloud
 
         $app['config']->set('logging.channels.laravel-cloud-socket', [
             'driver' => 'monolog',
+            'level' => $_ENV['LOG_LEVEL'] ?? $_SERVER['LOG_LEVEL'] ?? 'debug',
             'handler' => SocketHandler::class,
             'formatter' => JsonFormatter::class,
             'formatter_with' => [

@@ -21,10 +21,12 @@ class TestbenchServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        AboutCommand::add('Testbench', fn () => [
-            'Core Version' => class_exists(InstalledVersions::class) ? InstalledVersions::getPrettyVersion('orchestra/testbench-core') : '<fg=yellow;options=bold>-</>',
-            'Skeleton Path' => str_replace(package_path(), '', $this->app->basePath()),
-        ]);
+        AboutCommand::add('Testbench', fn () => array_filter([
+            'Core Version' => InstalledVersions::getPrettyVersion('orchestra/testbench-core'),
+            'Dusk Version' => InstalledVersions::isInstalled('orchestra/testbench-dusk') ? InstalledVersions::getPrettyVersion('orchestra/testbench-dusk') : null,
+            'Skeleton Path' => AboutCommand::format($this->app->basePath(), console: fn ($value) => str_replace(package_path(), '', $value)),
+            'Version' => InstalledVersions::isInstalled('orchestra/testbench') ? InstalledVersions::getPrettyVersion('orchestra/testbench') : null,
+        ]));
     }
 
     /**
@@ -40,7 +42,6 @@ class TestbenchServiceProvider extends ServiceProvider
                     ? Console\TestCommand::class
                     : Console\TestFallbackCommand::class,
                 Console\CreateSqliteDbCommand::class,
-                Console\DevToolCommand::class,
                 Console\DropSqliteDbCommand::class,
                 Console\PurgeSkeletonCommand::class,
                 Console\SyncSkeletonCommand::class,

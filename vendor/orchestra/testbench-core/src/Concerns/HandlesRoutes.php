@@ -10,16 +10,12 @@ use Laravel\SerializableClosure\SerializableClosure;
 use Orchestra\Testbench\Attributes\DefineRoute;
 use Orchestra\Testbench\Attributes\UsesVendor;
 use Orchestra\Testbench\Features\TestingFeature;
-use Orchestra\Testbench\Foundation\Application;
 use Orchestra\Testbench\Foundation\Bootstrap\SyncTestbenchCachedRoutes;
 
-use function Orchestra\Sidekick\join_paths;
+use function Orchestra\Sidekick\Filesystem\join_paths;
 use function Orchestra\Testbench\refresh_router_lookups;
 use function Orchestra\Testbench\remote;
 
-/**
- * @internal
- */
 trait HandlesRoutes
 {
     use InteractsWithPHPUnit;
@@ -34,6 +30,8 @@ trait HandlesRoutes
 
     /**
      * Setup routes requirements.
+     *
+     * @internal
      *
      * @param  \Illuminate\Foundation\Application  $app
      */
@@ -57,7 +55,13 @@ trait HandlesRoutes
             annotation: fn () => $this->parseTestMethodAnnotations($app, 'define-route', function ($method) use ($router) {
                 $this->{$method}($router);
             }),
-            attribute: fn () => $this->parseTestMethodAttributes($app, DefineRoute::class)
+            attribute: fn () => $this->parseTestMethodAttributes($app, DefineRoute::class),
+            pest: function () use ($router) {
+                $this->defineRoutesUsingPest($router); // @phpstan-ignore method.notFound
+
+                $router->middleware('web')
+                    ->group(fn ($router) => $this->defineWebRoutesUsingPest($router)); /** @phpstan-ignore method.notFound */
+            }
         );
 
         refresh_router_lookups($router);
@@ -65,6 +69,8 @@ trait HandlesRoutes
 
     /**
      * Define routes setup.
+     *
+     * @api
      *
      * @param  \Illuminate\Routing\Router  $router
      * @return void
@@ -77,6 +83,8 @@ trait HandlesRoutes
     /**
      * Define web routes setup.
      *
+     * @api
+     *
      * @param  \Illuminate\Routing\Router  $router
      * @return void
      */
@@ -88,6 +96,8 @@ trait HandlesRoutes
     /**
      * Define stash routes setup.
      *
+     * @api
+     *
      * @param  \Closure|string  $route
      * @return void
      */
@@ -98,6 +108,8 @@ trait HandlesRoutes
 
     /**
      * Define cache routes setup.
+     *
+     * @api
      *
      * @param  \Closure|string  $route
      * @param  bool  $cached
@@ -120,14 +132,16 @@ trait HandlesRoutes
         $time = time();
 
         $basePath = static::applicationBasePath();
-        $bootstrapPath = join_paths($basePath, 'bootstrap');
+        $bootstrapPath = $files->isDirectory(join_paths($basePath, '.laravel'))
+            ? join_paths($basePath, '.laravel')
+            : join_paths($basePath, 'bootstrap');
 
         if ($route instanceof Closure) {
             $cached = false;
             /** @var string $serializeRoute */
             $serializeRoute = serialize(SerializableClosure::unsigned($route));
             $stub = $files->get(join_paths(__DIR__, 'stubs', 'routes.stub'));
-            $route = str_replace('{{routes}}', (string) json_encode($serializeRoute), $stub);
+            $route = str_replace('{{routes}}', var_export($serializeRoute, true), $stub);
         }
 
         $files->put(
@@ -149,6 +163,11 @@ trait HandlesRoutes
 
     /**
      * Require application cached routes.
+     *
+     * @internal
+     *
+     * @param  \Illuminate\Filesystem\Filesystem  $files
+     * @return void
      */
     protected function requireApplicationCachedRoutes(Filesystem $files, bool $cached): void
     {

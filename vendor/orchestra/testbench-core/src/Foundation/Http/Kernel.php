@@ -14,6 +14,7 @@ abstract class Kernel extends HttpKernel
      *
      * @return array
      */
+    #[\Override]
     protected function bootstrappers()
     {
         return [];

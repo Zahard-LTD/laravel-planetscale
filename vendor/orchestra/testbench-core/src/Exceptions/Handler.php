@@ -11,22 +11,6 @@ use Throwable;
 class Handler extends ExceptionHandler
 {
     /** {@inheritDoc} */
-    protected $dontReport = [
-        //
-    ];
-
-    /** {@inheritDoc} */
-    protected $levels = [
-        //
-    ];
-
-    /** {@inheritDoc} */
-    protected $dontFlash = [
-        'password',
-        'password_confirmation',
-    ];
-
-    /** {@inheritDoc} */
     #[\Override]
     public function report(Throwable $e)
     {

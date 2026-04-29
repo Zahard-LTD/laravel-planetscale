@@ -5,6 +5,8 @@ namespace Orchestra\Testbench\Foundation\Console\Actions;
 use Illuminate\Console\View\Components\Factory as ComponentsFactory;
 use Illuminate\Filesystem\Filesystem;
 
+use function Laravel\Prompts\confirm;
+use function Orchestra\Sidekick\Filesystem\join_paths;
 use function Orchestra\Testbench\transform_realpath_to_relative;
 
 /**
@@ -19,12 +21,14 @@ class GeneratesFile extends Action
      * @param  \Illuminate\Console\View\Components\Factory|null  $components
      * @param  bool  $force
      * @param  string|null  $workingPath
+     * @param  bool  $confirmation
      */
     public function __construct(
-        public Filesystem $filesystem,
-        public ?ComponentsFactory $components = null,
-        public bool $force = false,
-        public ?string $workingPath = null
+        public readonly Filesystem $filesystem,
+        public readonly ?ComponentsFactory $components = null,
+        public readonly bool $force = false,
+        public ?string $workingPath = null,
+        public readonly bool $confirmation = false
     ) {}
 
     /**
@@ -34,7 +38,7 @@ class GeneratesFile extends Action
      * @param  string|false|null  $to
      * @return void
      */
-    public function handle($from, $to): void
+    public function handle(string|false|null $from, string|false|null $to): void
     {
         if (! \is_string($from) || ! \is_string($to)) {
             return;
@@ -49,25 +53,31 @@ class GeneratesFile extends Action
             return;
         }
 
+        $location = transform_realpath_to_relative($to, $this->workingPath);
+
         if (! $this->force && $this->filesystem->exists($to)) {
             $this->components?->twoColumnDetail(
-                \sprintf('File [%s] already exists', transform_realpath_to_relative($to, $this->workingPath)),
+                \sprintf('File [%s] already exists', $location),
                 '<fg=yellow;options=bold>SKIPPED</>'
             );
 
             return;
         }
 
+        if ($this->confirmation === true && confirm(\sprintf('Generate [%s] file?', $location)) === false) {
+            return;
+        }
+
         $this->filesystem->copy($from, $to);
 
-        $gitKeepFile = \sprintf('%s/.gitkeep', \dirname($to));
+        $gitKeepFile = join_paths(\dirname($to), '.gitkeep');
 
         if ($this->filesystem->exists($gitKeepFile)) {
             $this->filesystem->delete($gitKeepFile);
         }
 
         $this->components?->task(
-            \sprintf('File [%s] generated', transform_realpath_to_relative($to, $this->workingPath))
+            \sprintf('File [%s] generated', $location)
         );
     }
 }

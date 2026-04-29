@@ -4,8 +4,9 @@ namespace Orchestra\Testbench\PHPUnit;
 
 use Orchestra\Testbench\Concerns\HandlesAssertions;
 use Orchestra\Testbench\Concerns\InteractsWithMockery;
+use Throwable;
 
-abstract class TestCase extends \PHPUnit\Framework\TestCase
+class TestCase extends \PHPUnit\Framework\TestCase
 {
     use HandlesAssertions;
     use InteractsWithMockery;
@@ -15,5 +16,12 @@ abstract class TestCase extends \PHPUnit\Framework\TestCase
     protected function tearDown(): void
     {
         $this->tearDownTheTestEnvironmentUsingMockery();
+    }
+
+    /** {@inheritDoc} */
+    #[\Override]
+    protected function transformException(Throwable $error): Throwable
+    {
+        return $error;
     }
 }

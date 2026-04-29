@@ -2,13 +2,14 @@
 
 namespace Orchestra\Testbench\Foundation\Process;
 
+use Closure;
 use Illuminate\Support\Traits\ForwardsCalls;
 use Symfony\Component\Process\Process;
 
 /**
  * @internal
  */
-final class ProcessResult
+final class ProcessResult extends \Illuminate\Process\ProcessResult
 {
     use ForwardsCalls;
 
@@ -29,82 +30,37 @@ final class ProcessResult
      * Create a new process result instance.
      *
      * @param  \Symfony\Component\Process\Process  $process
-     * @param  array<int, string>|string  $command
+     * @param  (\Closure():(mixed))|array<int, string>|string  $command
      */
     public function __construct(
-        protected Process $process,
-        protected array|string $command,
-    ) {}
-
-    /**
-     * Get the original command executed by the process.
-     *
-     * @return string
-     */
-    public function command()
-    {
-        return $this->process->getCommandLine();
+        Process $process,
+        protected Closure|array|string $command,
+    ) {
+        parent::__construct($process);
     }
 
-    /**
-     * Determine if the process was successful.
-     *
-     * @return bool
-     */
-    public function successful()
-    {
-        return $this->process->isSuccessful();
-    }
-
-    /**
-     * Determine if the process failed.
-     *
-     * @return bool
-     */
-    public function failed()
-    {
-        return ! $this->successful();
-    }
-
-    /**
-     * Get the exit code of the process.
-     *
-     * @return int|null
-     */
-    public function exitCode()
-    {
-        return $this->process->getExitCode();
-    }
-
-    /**
-     * Get the standard output of the process.
-     *
-     * @return string
-     */
+    /** {@inheritDoc} */
+    #[\Override]
     public function output()
     {
-        return $this->process->getOutput();
-    }
+        $output = $this->process->getOutput();
 
-    /**
-     * Determine if the output contains the given string.
-     *
-     * @param  string  $output
-     * @return bool
-     */
-    public function seeInOutput(string $output)
-    {
-        return str_contains($this->output(), $output);
-    }
+        if (! $this->command instanceof Closure) {
+            return $output;
+        }
 
-    /**
-     * Get the error output of the process.
-     *
-     * @return string
-     */
-    public function errorOutput()
-    {
-        return $this->process->getErrorOutput();
+        /** @var array{successful: bool, result: string, exception: \Throwable, parameters: array, message: string} $result */
+        $result = json_decode($output, true);
+
+        if (! $result['successful']) {
+            throw new $result['exception'](
+                ...(! empty(array_filter($result['parameters']))
+                    ? $result['parameters']
+                    : [$result['message']])
+            );
+        }
+
+        return unserialize($result['result']);
     }
 
     /**

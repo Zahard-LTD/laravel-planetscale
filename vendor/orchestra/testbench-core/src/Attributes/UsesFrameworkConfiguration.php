@@ -6,6 +6,8 @@ use Attribute;
 use Illuminate\Foundation\Bootstrap\LoadConfiguration;
 use Orchestra\Testbench\Contracts\Attributes\Invokable as InvokableContract;
 
+use function Orchestra\Testbench\package_path;
+
 #[Attribute(Attribute::TARGET_CLASS | Attribute::TARGET_METHOD)]
 final class UsesFrameworkConfiguration implements InvokableContract
 {
@@ -18,5 +20,9 @@ final class UsesFrameworkConfiguration implements InvokableContract
     public function __invoke($app): void
     {
         $app->bind(LoadConfiguration::class, LoadConfiguration::class);
+
+        $app->useConfigPath(package_path(['vendor', 'laravel', 'framework', 'config']));
+
+        $app->dontMergeFrameworkConfiguration();
     }
 }

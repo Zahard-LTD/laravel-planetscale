@@ -2,29 +2,33 @@
 
 namespace Orchestra\Canvas\Console;
 
-use Illuminate\Filesystem\Filesystem;
-use Illuminate\Support\Composer;
 use Orchestra\Canvas\Core\Concerns\MigrationGenerator;
 use Symfony\Component\Console\Attribute\AsCommand;
 
 /**
- * @see https://github.com/laravel/framework/blob/9.x/src/Illuminate/Queue/Console/BatchesTableCommand.php
+ * @see https://github.com/laravel/framework/blob/11.x/src/Illuminate/Queue/Console/BatchesTableCommand.php
  */
-#[AsCommand(name: 'queue:batches-table', description: 'Create a migration for the batches database table')]
+#[AsCommand(name: 'make:queue-batches-table', description: 'Create a migration for the batches database table', aliases: ['queue:batches-table'])]
 class BatchesTableCommand extends \Illuminate\Queue\Console\BatchesTableCommand
 {
     use MigrationGenerator;
 
     /**
-     * Create a new notifications table command instance.
+     * The console command name.
      *
-     * @param  \Illuminate\Filesystem\Filesystem  $files
-     * @param  \Illuminate\Support\Composer  $composer
+     * @var string
+     */
+    protected $name = 'make:queue-batches-table';
+
+    /**
+     * Configures the current command.
+     *
      * @return void
      */
-    public function __construct(Filesystem $files, Composer $composer)
+    #[\Override]
+    protected function configure()
     {
-        parent::__construct($files, $composer);
+        parent::configure();
 
         $this->addGeneratorPresetOptions();
     }
@@ -36,8 +40,20 @@ class BatchesTableCommand extends \Illuminate\Queue\Console\BatchesTableCommand
      * @return string
      */
     #[\Override]
-    protected function createBaseMigration($table = 'job_batches')
+    protected function createBaseMigration($table)
     {
         return $this->createBaseMigrationUsingCanvas($table);
+    }
+
+    /**
+     * Determine whether a migration for the table already exists.
+     *
+     * @param  string  $table
+     * @return bool
+     */
+    #[\Override]
+    protected function migrationExists($table)
+    {
+        return $this->migrationExistsUsingCanvas($table);
     }
 }

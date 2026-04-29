@@ -12,7 +12,7 @@ use Orchestra\Testbench\Foundation\Actions\DeleteVendorSymlink;
 use Orchestra\Testbench\Workbench\Actions\RemoveAssetSymlinkFolders;
 use Symfony\Component\Console\Attribute\AsCommand;
 
-use function Orchestra\Sidekick\join_paths;
+use function Orchestra\Sidekick\Filesystem\join_paths;
 
 /**
  * @codeCoverageIgnore
@@ -50,54 +50,46 @@ class PurgeSkeletonCommand extends Command
         (new Actions\DeleteFiles(
             filesystem: $filesystem,
         ))->handle(
-            Collection::make([
+            (new Collection([
                 $environmentFile,
                 "{$environmentFile}.backup",
                 join_paths('bootstrap', 'cache', 'testbench.yaml'),
                 join_paths('bootstrap', 'cache', 'testbench.yaml.backup'),
-            ])->map(fn ($file) => $this->laravel->basePath($file))
+            ]))->map(fn ($file) => $this->laravel->basePath($file))
         );
 
         (new Actions\DeleteFiles(
             filesystem: $filesystem,
         ))->handle(
-            LazyCollection::make(function () use ($filesystem) {
-                yield $this->laravel->basePath(join_paths('database', 'database.sqlite'));
+            (new LazyCollection(function () use ($filesystem) {
+                yield $this->laravel->databasePath('database.sqlite');
                 yield $filesystem->glob($this->laravel->basePath(join_paths('routes', 'testbench-*.php')));
-                yield $filesystem->glob($this->laravel->basePath(join_paths('storage', 'app', 'public', '*')));
-                yield $filesystem->glob($this->laravel->basePath(join_paths('storage', 'app', '*')));
-                yield $filesystem->glob($this->laravel->basePath(join_paths('storage', 'framework', 'sessions', '*')));
-            })->flatten()
+                yield $filesystem->glob($this->laravel->storagePath(join_paths('app', 'public', '*')));
+                yield $filesystem->glob($this->laravel->storagePath(join_paths('app', '*')));
+                yield $filesystem->glob($this->laravel->storagePath(join_paths('framework', 'sessions', '*')));
+            }))->flatten()
         );
 
         (new Actions\DeleteFiles(
             filesystem: $filesystem,
             components: $this->components,
         ))->handle(
-            LazyCollection::make($files)
+            (new LazyCollection($files))
                 ->map(fn ($file) => $this->laravel->basePath($file))
-                ->map(static function ($file) use ($filesystem) {
-                    return str_contains($file, '*')
-                        ? [...$filesystem->glob($file)]
-                        : $file;
-                })->flatten()
-                ->reject(fn ($file) => str_contains($file, '*'))
+                ->map(static fn ($file) => str_contains($file, '*') ? [...$filesystem->glob($file)] : $file)
+                ->flatten()
+                ->reject(static fn ($file) => str_contains($file, '*'))
         );
 
         (new Actions\DeleteDirectories(
             filesystem: $filesystem,
             components: $this->components,
         ))->handle(
-            Collection::make($directories)
+            (new Collection($directories))
                 ->map(fn ($directory) => $this->laravel->basePath($directory))
-                ->map(static function ($directory) use ($filesystem) {
-                    return str_contains($directory, '*')
-                        ? [...$filesystem->glob($directory)]
-                        : $directory;
-                })->flatten()
-                ->reject(static function ($directory) {
-                    return str_contains($directory, '*');
-                })
+                ->map(static fn ($directory) => str_contains($directory, '*') ? [...$filesystem->glob($directory)] : $directory)
+                ->flatten()
+                ->reject(static fn ($directory) => str_contains($directory, '*'))
         );
 
         TerminatingConsole::before(function () {

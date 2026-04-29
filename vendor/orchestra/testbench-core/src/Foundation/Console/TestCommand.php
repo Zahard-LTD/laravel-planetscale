@@ -6,7 +6,10 @@ use Illuminate\Support\Collection;
 use NunoMaduro\Collision\Adapters\Laravel\Commands\TestCommand as Command;
 use Orchestra\Sidekick\Env;
 use Orchestra\Testbench\Features\ParallelRunner;
+use Symfony\Component\Console\Input\InputOption;
 
+use function Orchestra\Sidekick\is_testbench_cli;
+use function Orchestra\Sidekick\package_version_compare;
 use function Orchestra\Testbench\defined_environment_variables;
 use function Orchestra\Testbench\package_path;
 
@@ -22,14 +25,16 @@ class TestCommand extends Command
      */
     protected $signature = 'package:test
         {--without-tty : Disable output to TTY}
-        {--c|configuration= : Read configuration from XML file}
         {--compact : Indicates whether the compact printer should be used}
-        {--coverage : Indicates whether code coverage information should be collected}
-        {--min= : Indicates the minimum threshold enforcement for code coverage}
+        {--configuration= : Read configuration from XML file}
+        {--coverage : Indicates whether the coverage information should be collected}
+        {--min= : Indicates the minimum threshold enforcement for coverage}
         {--p|parallel : Indicates if the tests should run in parallel}
         {--profile : Lists top 10 slowest tests}
         {--recreate-databases : Indicates if the test databases should be re-created}
         {--drop-databases : Indicates if the test databases should be dropped}
+        {--without-databases : Indicates if database configuration should be performed}
+        {--c|--custom-argument : Add custom env variables}
     ';
 
     /**
@@ -45,8 +50,16 @@ class TestCommand extends Command
     {
         parent::configure();
 
-        if (! \defined('TESTBENCH_CORE')) {
+        if (! is_testbench_cli()) {
             $this->setHidden(true);
+        }
+
+        if (package_version_compare('nunomaduro/collision', '8.9.4', '>=')) {
+            $this->addOption(
+                name: 'without-cache',
+                mode: InputOption::VALUE_NONE,
+                description: 'Indicates if cache configuration should be performed',
+            );
         }
     }
 
@@ -68,10 +81,10 @@ class TestCommand extends Command
     {
         $configurationFile = str_replace('./', '', $this->option('configuration') ?? 'phpunit.xml');
 
-        return Collection::make([
+        return (new Collection([
             package_path($configurationFile),
             package_path("{$configurationFile}.dist"),
-        ])->transform(static fn ($path) => DIRECTORY_SEPARATOR.$path)
+        ]))->transform(static fn ($path) => DIRECTORY_SEPARATOR.$path)
             ->filter(static fn ($path) => is_file($path))
             ->first() ?? './';
     }
@@ -82,7 +95,7 @@ class TestCommand extends Command
     {
         $file = $this->phpUnitConfigurationFile();
 
-        return Collection::make(parent::phpunitArguments($options))
+        return (new Collection(parent::phpunitArguments($options)))
             ->reject(static fn ($option) => str_starts_with($option, '--configuration='))
             ->merge(["--configuration={$file}"])
             ->all();
@@ -94,11 +107,9 @@ class TestCommand extends Command
     {
         $file = $this->phpUnitConfigurationFile();
 
-        return Collection::make(parent::paratestArguments($options))
-            ->reject(static function (string $option) {
-                return str_starts_with($option, '--configuration=')
-                    || str_starts_with($option, '--runner=');
-            })->merge([
+        return (new Collection(parent::paratestArguments($options)))
+            ->reject(static fn (string $option) => str_starts_with($option, '--configuration=') || str_starts_with($option, '--runner='))
+            ->merge([
                 \sprintf('--configuration=%s', $file),
                 \sprintf('--runner=%s', ParallelRunner::class),
             ])->all();
@@ -108,7 +119,7 @@ class TestCommand extends Command
     #[\Override]
     protected function phpunitEnvironmentVariables()
     {
-        return Collection::make(defined_environment_variables())
+        return (new Collection(defined_environment_variables()))
             ->merge([
                 'APP_ENV' => 'testing',
                 'TESTBENCH_PACKAGE_TESTER' => '(true)',
@@ -122,7 +133,7 @@ class TestCommand extends Command
     #[\Override]
     protected function paratestEnvironmentVariables()
     {
-        return Collection::make(defined_environment_variables())
+        return (new Collection(defined_environment_variables()))
             ->merge([
                 'APP_ENV' => 'testing',
                 'TESTBENCH_PACKAGE_TESTER' => '(true)',
@@ -130,5 +141,16 @@ class TestCommand extends Command
                 'TESTBENCH_APP_BASE_PATH' => $this->laravel->basePath(),
             ])->merge(parent::paratestEnvironmentVariables())
             ->all();
+    }
+
+    /**
+     * Get the configuration file.
+     *
+     * @return string
+     */
+    #[\Override]
+    protected function getConfigurationFile()
+    {
+        return $this->phpUnitConfigurationFile();
     }
 }

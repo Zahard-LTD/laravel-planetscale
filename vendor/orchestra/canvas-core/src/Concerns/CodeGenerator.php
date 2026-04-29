@@ -24,7 +24,7 @@ trait CodeGenerator
         // language and that the class name will actually be valid. If it is not valid we
         // can error now and prevent from polluting the filesystem using invalid files.
         if ($this->isReservedName($name)) {
-            $this->components->error('The name "'.$name.'" is reserved by PHP.');
+            $this->components->error(\sprintf('The name "%s" is reserved by PHP.', $name));
 
             return false;
         }
@@ -68,7 +68,7 @@ trait CodeGenerator
     public function codeAlreadyExists(string $className, string $path): bool
     {
         $this->components->error(
-            sprintf(
+            \sprintf(
                 '%s [%s] already exists!', $this->type, Str::after($path, $this->generatorPreset()->basePath().DIRECTORY_SEPARATOR)
             )
         );
@@ -82,7 +82,7 @@ trait CodeGenerator
     public function codeHasBeenGenerated(string $className, string $path): bool
     {
         $this->components->info(
-            sprintf(
+            \sprintf(
                 '%s [%s] created successfully.', $this->type, Str::after($path, $this->generatorPreset()->basePath().DIRECTORY_SEPARATOR)
             )
         );

@@ -17,6 +17,8 @@ trait HandlesAttributes
     /**
      * Parse test method attributes.
      *
+     * @internal
+     *
      * @param  \Illuminate\Foundation\Application  $app
      * @param  class-string  $attribute
      * @return \Orchestra\Testbench\Features\FeaturesCollection<int, mixed>
@@ -25,9 +27,8 @@ trait HandlesAttributes
     {
         /** @var \Illuminate\Support\Collection<int, mixed> $attributes */
         $attributes = $this->resolvePhpUnitAttributes()
-            ->filter(static function ($attributes, string $key) use ($attribute) {
-                return $key === $attribute && ! empty($attributes);
-            })->flatten()
+            ->filter(static fn ($attributes, string $key) => $key === $attribute && ! empty($attributes))
+            ->flatten()
             ->map(function ($instance) use ($app) {
                 if ($instance instanceof InvokableContract) {
                     return $instance($app);

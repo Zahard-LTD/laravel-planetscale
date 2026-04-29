@@ -2,10 +2,11 @@
 
 namespace Orchestra\Testbench\Concerns;
 
+use Closure;
 use Illuminate\Support\Collection;
 use Orchestra\Testbench\PHPUnit\AttributeParser;
 use PHPUnit\Framework\TestCase as PHPUnitTestCase;
-use PHPUnit\Util\Annotation\Registry as PHPUnit9Registry;
+use PHPUnit\Metadata\Annotation\Parser\Registry as PHPUnitRegistry;
 use ReflectionClass;
 
 /**
@@ -16,6 +17,20 @@ use ReflectionClass;
 trait InteractsWithPHPUnit
 {
     use InteractsWithTestCase;
+
+    /**
+     * The cached test case setUp resolver.
+     *
+     * @var (\Closure(\Closure):(void))|null
+     */
+    protected ?Closure $testCaseSetUpCallback = null;
+
+    /**
+     * The cached test case tearDown resolver.
+     *
+     * @var (\Closure(\Closure):(void))|null
+     */
+    protected ?Closure $testCaseTearDownCallback = null;
 
     /**
      * The cached class attributes for test case.
@@ -37,6 +52,8 @@ trait InteractsWithPHPUnit
 
     /**
      * Determine if the trait is used within testing.
+     *
+     * @api
      *
      * @return bool
      */
@@ -80,37 +97,47 @@ trait InteractsWithPHPUnit
             return null;
         }
 
-        return $this->getName(false);
+        return $this->name();
     }
 
     /**
      * Resolve PHPUnit method annotations.
      *
+     * @internal
+     *
      * @phpunit-overrides
      *
      * @return \Illuminate\Support\Collection<string, mixed>
+     *
+     * @deprecated
+     *
+     * @codeCoverageIgnore
      */
     protected function resolvePhpUnitAnnotations(): Collection
     {
         $className = $this->resolvePhpUnitTestClassName();
         $methodName = $this->resolvePhpUnitTestMethodName();
 
-        if (\is_null($className) || \is_null($methodName)) {
+        if (! class_exists(PHPUnitRegistry::class) || \is_null($className) || \is_null($methodName)) {
             return new Collection;
         }
 
+        $registry = PHPUnitRegistry::getInstance();
+
         /** @var array<string, mixed> $annotations */
         $annotations = rescue(
-            fn () => PHPUnit9Registry::getInstance()->forMethod($className, $methodName)->symbolAnnotations(),
+            fn () => $registry->forMethod($className, $methodName)->symbolAnnotations(),
             [],
             false
         );
 
-        return Collection::make($annotations);
+        return new Collection($annotations);
     }
 
     /**
      * Resolve PHPUnit method attributes.
+     *
+     * @internal
      *
      * @phpunit-overrides
      *
@@ -133,6 +160,8 @@ trait InteractsWithPHPUnit
     /**
      * Resolve PHPUnit method attributes for specific method.
      *
+     * @internal
+     *
      * @phpunit-overrides
      *
      * @param  class-string  $className
@@ -144,24 +173,24 @@ trait InteractsWithPHPUnit
     protected static function resolvePhpUnitAttributesForMethod(string $className, ?string $methodName = null): Collection
     {
         if (! isset(static::$cachedTestCaseClassAttributes[$className])) {
-            static::$cachedTestCaseClassAttributes[$className] = rescue(static function () use ($className) {
-                return AttributeParser::forClass($className);
-            }, [], false);
+            static::$cachedTestCaseClassAttributes[$className] = rescue(
+                static fn () => AttributeParser::forClass($className), [], false
+            );
         }
 
         if (! \is_null($methodName) && ! isset(static::$cachedTestCaseMethodAttributes["{$className}:{$methodName}"])) {
-            static::$cachedTestCaseMethodAttributes["{$className}:{$methodName}"] = rescue(static function () use ($className, $methodName) {
-                return AttributeParser::forMethod($className, $methodName);
-            }, [], false);
+            static::$cachedTestCaseMethodAttributes["{$className}:{$methodName}"] = rescue(
+                static fn () => AttributeParser::forMethod($className, $methodName), [], false
+            );
         }
 
         /** @var \Illuminate\Support\Collection<class-string<TTestingFeature>, array<int, TTestingFeature>> $attributes */
-        $attributes = Collection::make(array_merge(
+        $attributes = (new Collection(array_merge(
             static::$testCaseTestingFeatures,
             static::$cachedTestCaseClassAttributes[$className],
             static::$testCaseMethodTestingFeatures,
             ! \is_null($methodName) ? static::$cachedTestCaseMethodAttributes["{$className}:{$methodName}"] : [],
-        ))->groupBy('key')
+        )))->groupBy('key')
             ->map(static function ($attributes) {
                 /** @var \Illuminate\Support\Collection<int, array{key: class-string<TTestingFeature>, instance: TTestingFeature}> $attributes */
                 return $attributes->map(static function ($attribute) {
@@ -174,7 +203,39 @@ trait InteractsWithPHPUnit
     }
 
     /**
+     * Define the setUp environment using callback.
+     *
+     * @internal
+     *
+     * @param  \Closure(\Closure):void  $setUp
+     * @return void
+     *
+     * @codeCoverageIgnore
+     */
+    public function setUpTheEnvironmentUsing(Closure $setUp): void
+    {
+        $this->testCaseSetUpCallback = $setUp;
+    }
+
+    /**
+     * Define the tearDown environment using callback.
+     *
+     * @internal
+     *
+     * @param  \Closure(\Closure):void  $tearDown
+     * @return void
+     *
+     * @codeCoverageIgnore
+     */
+    public function tearDownTheEnvironmentUsing(Closure $tearDown): void
+    {
+        $this->testCaseTearDownCallback = $tearDown;
+    }
+
+    /**
      * Prepare the testing environment before the running the test case.
+     *
+     * @internal
      *
      * @return void
      *
@@ -188,6 +249,8 @@ trait InteractsWithPHPUnit
     /**
      * Clean up the testing environment before the next test case.
      *
+     * @internal
+     *
      * @return void
      *
      * @codeCoverageIgnore
@@ -198,9 +261,13 @@ trait InteractsWithPHPUnit
         static::$cachedTestCaseClassAttributes = [];
         static::$cachedTestCaseMethodAttributes = [];
 
-        (function () {
-            $this->classDocBlocks = [];
-            $this->methodDocBlocks = [];
-        })->call(PHPUnit9Registry::getInstance());
+        if (class_exists(PHPUnitRegistry::class)) {
+            $registry = PHPUnitRegistry::getInstance();
+
+            (function () {
+                $this->classDocBlocks = [];
+                $this->methodDocBlocks = [];
+            })->call($registry);
+        }
     }
 }

@@ -14,6 +14,7 @@ class BranchTest extends TestCase
             'planetscale.service_token.value' => 'valid',
             'planetscale.organization' => 'laravel-test',
             'planetscale.database' => 'laravel-test',
+            'planetscale.development_branch' => 'artisan-migrate-0000000000',
         ]);
 
         Http::preventStrayRequests();

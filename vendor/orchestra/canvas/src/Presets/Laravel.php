@@ -2,6 +2,8 @@
 
 namespace Orchestra\Canvas\Presets;
 
+use function Orchestra\Sidekick\join_paths;
+
 class Laravel extends Preset
 {
     /**
@@ -17,7 +19,7 @@ class Laravel extends Preset
      */
     public function sourcePath(): string
     {
-        return implode('/', [$this->basePath(), $this->config('paths.src', 'app')]);
+        return join_paths($this->basePath(), $this->config('paths.src', 'app'));
     }
 
     /**
@@ -30,8 +32,6 @@ class Laravel extends Preset
 
     /**
      * Command namespace.
-     *
-     * @return string
      */
     public function commandNamespace(): string
     {
@@ -67,6 +67,6 @@ class Laravel extends Preset
      */
     public function getCustomStubPath(): ?string
     {
-        return \sprintf('%s/%s', $this->basePath(), 'stubs');
+        return join_paths($this->basePath(), 'stubs');
     }
 }

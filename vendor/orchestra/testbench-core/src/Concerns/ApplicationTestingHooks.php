@@ -14,6 +14,7 @@ use Throwable;
 trait ApplicationTestingHooks
 {
     use InteractsWithMockery;
+    use InteractsWithPest;
     use InteractsWithPHPUnit;
     use InteractsWithTestCase;
 
@@ -50,17 +51,19 @@ trait ApplicationTestingHooks
      *
      * @var \Throwable|null
      */
-    protected $callbackException;
+    protected ?Throwable $callbackException = null;
 
     /**
      * Indicates if we have made it through the base setUp function.
      *
      * @var bool
      */
-    protected $setUpHasRun = false;
+    protected bool $setUpHasRun = false;
 
     /**
      * Setup the testing hooks.
+     *
+     * @internal
      *
      * @param  (\Closure():(void))|null  $callback
      * @return void
@@ -93,6 +96,8 @@ trait ApplicationTestingHooks
 
     /**
      * Teardown the testing hooks.
+     *
+     * @internal
      *
      * @param  (\Closure():(void))|null  $callback
      * @return void
@@ -130,7 +135,7 @@ trait ApplicationTestingHooks
         $this->afterApplicationCreatedCallbacks = [];
         $this->beforeApplicationDestroyedCallbacks = [];
 
-        Testbench::flushState();
+        Testbench::flushState($this);
 
         if ($this->callbackException) {
             throw $this->callbackException;
@@ -139,10 +144,14 @@ trait ApplicationTestingHooks
 
     /**
      * Setup parallel testing callback.
+     *
+     * @internal
+     *
+     * @return void
      */
     protected function setUpParallelTestingCallbacks(): void
     {
-        if (class_exists(ParallelTesting::class) && $this instanceof PHPUnitTestCase) {
+        if ($this instanceof PHPUnitTestCase) {
             /** @phpstan-ignore staticMethod.notFound, argument.type */
             ParallelTesting::callSetUpTestCaseCallbacks($this);
         }
@@ -150,10 +159,14 @@ trait ApplicationTestingHooks
 
     /**
      * Teardown parallel testing callback.
+     *
+     * @internal
+     *
+     * @return void
      */
     protected function tearDownParallelTestingCallbacks(): void
     {
-        if (class_exists(ParallelTesting::class) && $this instanceof PHPUnitTestCase) {
+        if ($this instanceof PHPUnitTestCase) {
             /** @phpstan-ignore staticMethod.notFound, argument.type */
             ParallelTesting::callTearDownTestCaseCallbacks($this);
         }
@@ -161,6 +174,8 @@ trait ApplicationTestingHooks
 
     /**
      * Register a callback to be run after the application is refreshed.
+     *
+     * @api
      *
      * @param  callable():void  $callback
      * @return void
@@ -177,6 +192,8 @@ trait ApplicationTestingHooks
     /**
      * Execute the application's post-refreshed callbacks.
      *
+     * @internal
+     *
      * @return void
      */
     protected function callAfterApplicationRefreshedCallbacks(): void
@@ -188,6 +205,8 @@ trait ApplicationTestingHooks
 
     /**
      * Register a callback to be run after the application is created.
+     *
+     * @api
      *
      * @param  callable():void  $callback
      * @return void
@@ -204,6 +223,8 @@ trait ApplicationTestingHooks
     /**
      * Execute the application's post-creation callbacks.
      *
+     * @internal
+     *
      * @return void
      */
     protected function callAfterApplicationCreatedCallbacks(): void
@@ -216,6 +237,8 @@ trait ApplicationTestingHooks
     /**
      * Register a callback to be run before the application is destroyed.
      *
+     * @api
+     *
      * @param  callable():void  $callback
      * @return void
      */
@@ -226,6 +249,8 @@ trait ApplicationTestingHooks
 
     /**
      * Execute the application's pre-destruction callbacks.
+     *
+     * @internal
      *
      * @return void
      */
