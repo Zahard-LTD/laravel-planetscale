@@ -24,6 +24,7 @@ composer require x7media/laravel-planetscale
 	- connect_branch - Connect to, or create passwords and certificates for a database branch
 	- create_deploy_request - Create a database deploy request
 	- read_deploy_request - Read database deploy requests
+	- approve_deploy_request - Approve, deploy, and skip the revert period on deploy requests
 
 3. From the database settings screen on PlanetScale, click the checkmark to enable the "Automatically copy migration data" settings. Select "Laravel" from the migration framework dropdown and it should fill it "migrations" for the migration table name. Then save the database settings. This will allow migration status to be synced across PlanetScale database branches.
 
@@ -36,6 +37,12 @@ composer require x7media/laravel-planetscale
 `PLANETSCALE_SERVICE_TOKEN_ID=`
 
 `PLANETSCALE_SERVICE_TOKEN=`
+
+Optionally, you can opt out of automatically closing PlanetScale's revert window after each deploy by setting:
+
+`PLANETSCALE_SKIP_REVERT_PERIOD=false`
+
+By default this is `true` so that back-to-back deploys are not blocked by the previous deploy request's revert window (see the FAQ below). You will also need the `approve_deploy_request` permission on your Service Token for this to work.
 
 Additonally yuou'll need to make sure your database name is set under:
 
@@ -68,6 +75,12 @@ PlanetScale has a lot of advantages when using it as your application's producti
 This is accomplished by creating a branch of your schema, running your migrations against that branch and then opening a deploy request to have PlanetScale manage the schema migration for you in production.
 
 This package uses [PlanetScale's Public API](https://api-docs.planetscale.com/) to automate the process of creating a new development branch, connecting your app to the development branch, running your Laravel migrations on the development branch, merging that back into your production branch, and deleting the development branch. You end up with the best of both, the migration flow you are used to while also taking advantage of PlanetScale's schema migration tools.
+
+### Why does the package skip the revert period by default?
+
+When a deploy request is applied, PlanetScale holds the previous schema in a revertable state for the duration of the revert window (typically 30 minutes). During this window, **PlanetScale will not allow another deploy request to be applied to the same production branch**. If your deployment pipeline ships back-to-back changes — for example a backend deploy quickly followed by another deploy in the same release train — the second `pscale:migrate` will fail at the `completeDeploy` step and your container will fail to start.
+
+To avoid this, the package finalizes the deploy by calling PlanetScale's `skip-revert` endpoint as soon as the deployment reaches `complete_pending_revert`. Set `PLANETSCALE_SKIP_REVERT_PERIOD=false` if you would rather keep the revert window open and accept the deploy-coupling trade-off.
 
 ### Are there any notable limitations to PlanetScale's branching?
 

@@ -102,6 +102,11 @@ class LaravelPlanetscale
         $this->post("deploy-requests/{$number}/deploy");
     }
 
+    public function skipRevertPeriod(int $number): void
+    {
+        $this->post("deploy-requests/{$number}/skip-revert");
+    }
+
     public function deleteBranch(string $name): void
     {
         $this->baseRequest()->delete($this->getUrl("branches/{$name}"))->throw();
