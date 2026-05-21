@@ -1,0 +1,9 @@
+{
+    "id": "xxxxxxxxxxxx",
+    "type": "DeployRequest",
+    "branch": "artisan-migrate-0000000000",
+    "into_branch": "main",
+    "state": "closed",
+    "deployment_state": "complete",
+    "number": 1
+}

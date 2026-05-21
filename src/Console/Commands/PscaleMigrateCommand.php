@@ -164,6 +164,15 @@ class PscaleMigrateCommand extends BaseCommand
         if ($deployment_state == 'complete_error')
             return $this->error('An unexcepected error occured during the deployment.');
 
+        if ($deployment_state == 'complete_pending_revert' && config('planetscale.skip_revert_period')) {
+            $this->line('Skipping revert period to finalize deploy request...');
+            try {
+                $this->pscale->skipRevertPeriod($deploy_id);
+            } catch (RequestException $e) {
+                $this->warn('Unable to skip the revert period on the deploy request. The next deploy may be blocked until PlanetScale closes the revert window automatically.');
+            }
+        }
+
         $this->newLine();
         $this->info('Migrations successfully applied to production branch!');
     }
