@@ -169,7 +169,7 @@ class PscaleMigrateCommand extends BaseCommand
             try {
                 $this->pscale->skipRevertPeriod($deploy_id);
             } catch (RequestException $e) {
-                return $this->error('Unable to skip the revert period on the deploy request. The next deploy may be blocked until PlanetScale closes the revert window automatically.');
+                $this->warn('Unable to skip the revert period on the deploy request. The next deploy may be blocked until PlanetScale closes the revert window automatically.');
             }
         }
 
