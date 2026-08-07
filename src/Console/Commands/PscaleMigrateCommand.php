@@ -2,10 +2,10 @@
 
 namespace X7media\LaravelPlanetscale\Console\Commands;
 
+use Exception;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Facades\Artisan;
 use X7media\LaravelPlanetscale\Connection;
 use Illuminate\Http\Client\RequestException;
 use X7media\LaravelPlanetscale\LaravelPlanetscale;
@@ -27,6 +27,15 @@ class PscaleMigrateCommand extends BaseCommand
 
     protected bool $hasError = false;
     protected int $pollRate = 5; // in seconds
+
+    /**
+     * BaseCommand::getMigrationPaths() reads $this->migrator->paths() for
+     * migration paths registered by packages (loadMigrationsFrom). Resolved
+     * lazily in pendingMigrationNames().
+     *
+     * @var \Illuminate\Database\Migrations\Migrator|null
+     */
+    protected $migrator = null;
 
     public function __construct(protected LaravelPlanetscale $pscale)
     {
@@ -91,10 +100,20 @@ class PscaleMigrateCommand extends BaseCommand
 
     private function branch()
     {
-        $this->line('Creating development branch to run migrations on...');
         $devBranch = $this->pscale->getDevelopmentBranch();
         $productionBranch = config('planetscale.production_branch');
+        $connectionName = $this->option('database') ?: config('database.default');
 
+        // Snapshot everything we need from PRODUCTION before the connection is
+        // swapped to the development branch:
+        //   - the pending migration names (to record on production afterwards),
+        //   - the applied ledger rows (to backfill a data-less dev branch),
+        //   - the connection config (to swap back for the ledger sync).
+        $pendingMigrations = $this->pscale->runMigrations() ? $this->pendingMigrationNames() : [];
+        $productionLedger = $this->pscale->runMigrations() ? $this->productionLedgerRows($connectionName) : [];
+        $productionConfig = config("database.connections.{$connectionName}");
+
+        $this->line('Creating development branch to run migrations on...');
         try {
             $this->pscale->ensureBranchExists($devBranch, $productionBranch);
         } catch (RequestException $e) {
@@ -114,6 +133,13 @@ class PscaleMigrateCommand extends BaseCommand
             return;
 
         if ($this->pscale->runMigrations()) {
+            // PlanetScale branches copy the schema but NOT the data, and deploy
+            // requests never carry data either — so the dev branch's `migrations`
+            // ledger can be missing rows (or empty on a freshly created branch).
+            // Backfill it from production so `migrate` below only runs the
+            // migrations that are truly pending.
+            $this->backfillDevelopmentLedger($connectionName, $productionLedger);
+
             $this->line('Running Laravel migrations on development branch...');
             if ($this->call('migrate', [
                 '--database' => $this->option('database'),
@@ -131,9 +157,12 @@ class PscaleMigrateCommand extends BaseCommand
             $this->warn("Testing detected. Skip running `php artisan migrate`...");
         }
 
+        // Reuse an open deploy request left behind by a previous crashed run
+        // (PlanetScale allows only one open deploy request per branch), or
+        // create a fresh one.
         $this->line('Creating deploy request from development branch...');
         try {
-            $deploy_id = $this->pscale->deployRequest($devBranch);
+            $deploy_id = $this->pscale->openDeployRequestNumber($devBranch) ?? $this->pscale->deployRequest($devBranch);
         } catch (RequestException $e) {
             return $this->error('Unable to create the deploy request on Planetscale.');
         }
@@ -142,7 +171,34 @@ class PscaleMigrateCommand extends BaseCommand
         $this->line('Verifying deploy request is mergeable...');
         do {
             sleep($this->pollRate);
-        } while ($this->pscale->deploymentState($deploy_id) == 'pending');
+            $deployment_state = $this->pscale->deploymentState($deploy_id);
+        } while ($deployment_state == 'pending');
+
+        if ($deployment_state == 'no_changes') {
+            // The development branch schema is identical to production. This is
+            // the normal outcome when a previous run already merged the schema
+            // but died before recording the ledger (e.g. back-to-back deploys).
+            // Deploying a no-changes request is rejected by PlanetScale, so
+            // close it and just record the ledger on production.
+            $this->warn('Deploy request has no schema changes — production schema is already up to date.');
+
+            if (!empty($pendingMigrations)) {
+                $this->warn('If any of these migrations modify DATA rather than schema, those changes did NOT reach production (deploy requests carry schema only) and must be applied manually: ' . implode(', ', $pendingMigrations));
+            }
+
+            try {
+                $this->pscale->closeDeployRequest($deploy_id);
+            } catch (RequestException $e) {
+                $this->warn('Unable to close the empty deploy request. Close it manually in the PlanetScale UI or the next run will reuse it.');
+            }
+
+            $this->syncProductionLedger($connectionName, $productionConfig, $pendingMigrations);
+            if ($this->hasError) return;
+
+            $this->newLine();
+            $this->info('Migration ledger synced; production branch already up to date!');
+            return;
+        }
 
         $this->line('Applying changes back to production branch...');
         try {
@@ -172,6 +228,14 @@ class PscaleMigrateCommand extends BaseCommand
                 $this->warn('Unable to skip the revert period on the deploy request. The next deploy may be blocked until PlanetScale closes the revert window automatically.');
             }
         }
+
+        // Deploy requests merge SCHEMA only: the `migrations` rows that
+        // `migrate` inserted above live on the dev branch and never reach
+        // production. Record them on production ourselves, otherwise every
+        // subsequent boot re-detects the migrations as pending and spawns
+        // empty deploy requests (production incident 2026-08-06).
+        $this->syncProductionLedger($connectionName, $productionConfig, $pendingMigrations);
+        if ($this->hasError) return;
 
         $this->newLine();
         $this->info('Migrations successfully applied to production branch!');
@@ -244,18 +308,137 @@ class PscaleMigrateCommand extends BaseCommand
         return true;
     }
 
+    /**
+     * Point the connection back at the production branch after it was swapped
+     * to the development branch. setDatabaseConnection() registered a resolver
+     * bound to the dev-branch credentials, so it must be overridden (not just
+     * purged) with one bound to the original config.
+     */
+    protected function restoreProductionConnection(string $connectionName, array $productionConfig): void
+    {
+        config(["database.connections.{$connectionName}" => $productionConfig]);
+
+        app('db')->extend($connectionName, function ($config, $name) use ($productionConfig) {
+            return app('db.factory')->make($productionConfig, $name);
+        });
+
+        DB::purge($connectionName);
+
+        Model::setConnectionResolver(app('db'));
+    }
+
+    /**
+     * The names of every migration file that has not been recorded as ran
+     * on the current default (production) connection.
+     */
+    protected function pendingMigrationNames(): array
+    {
+        $migrator = $this->migrator ??= app('migrator');
+
+        return $migrator->usingConnection($this->option('database'), function () use ($migrator) {
+            $files = $migrator->getMigrationFiles($this->getMigrationPaths());
+            $ran = $migrator->getRepository()->repositoryExists() ? $migrator->getRepository()->getRan() : [];
+
+            return collect($files)
+                ->keys()
+                ->reject(fn ($name) => in_array($name, $ran))
+                ->values()
+                ->all();
+        });
+    }
+
+    /**
+     * All ledger rows currently recorded on the production branch.
+     */
+    protected function productionLedgerRows(string $connectionName): array
+    {
+        try {
+            return DB::connection($connectionName)
+                ->table('migrations')
+                ->orderBy('id')
+                ->get(['migration', 'batch'])
+                ->all();
+        } catch (Exception $e) {
+            return [];
+        }
+    }
+
+    /**
+     * Insert any production ledger rows missing from the development branch's
+     * `migrations` table, so `migrate` on the dev branch only executes the
+     * migrations that are actually pending.
+     */
+    protected function backfillDevelopmentLedger(string $connectionName, array $productionLedger): void
+    {
+        if (empty($productionLedger)) {
+            return;
+        }
+
+        try {
+            $connection = DB::connection($connectionName);
+
+            if (! $connection->getSchemaBuilder()->hasTable('migrations')) {
+                $this->call('migrate:install', ['--database' => $this->option('database')]);
+            }
+
+            $known = $connection->table('migrations')->pluck('migration')->all();
+
+            $missing = collect($productionLedger)->reject(fn ($row) => in_array($row->migration, $known));
+
+            foreach ($missing as $row) {
+                $connection->table('migrations')->insert([
+                    'migration' => $row->migration,
+                    'batch' => $row->batch,
+                ]);
+            }
+
+            if ($missing->isNotEmpty()) {
+                $this->line("Backfilled {$missing->count()} migration ledger row(s) on the development branch.");
+            }
+        } catch (Exception $e) {
+            $this->warn('Could not backfill the development branch migration ledger: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Record the migrations that were just deployed in the PRODUCTION branch's
+     * `migrations` table. Failing to do so leaves production believing they are
+     * still pending, which poisons every subsequent run with empty deploy
+     * requests. On failure the command errors out: the container will retry on
+     * next boot, hit the `no_changes` path, and re-attempt this sync.
+     */
+    protected function syncProductionLedger(string $connectionName, array $productionConfig, array $migrations): void
+    {
+        if (empty($migrations)) {
+            return;
+        }
+
+        $this->line('Recording applied migrations on the production branch...');
+
+        try {
+            $this->restoreProductionConnection($connectionName, $productionConfig);
+
+            $connection = DB::connection($connectionName);
+
+            $batch = ((int) $connection->table('migrations')->max('batch')) + 1;
+
+            foreach ($migrations as $migration) {
+                if (! $connection->table('migrations')->where('migration', $migration)->exists()) {
+                    $connection->table('migrations')->insert([
+                        'migration' => $migration,
+                        'batch' => $batch,
+                    ]);
+                }
+            }
+
+            $this->line('Migration ledger updated on production (batch ' . $batch . ', ' . count($migrations) . ' migration(s)).');
+        } catch (Exception $e) {
+            $this->error('Schema was deployed but the migration ledger could not be recorded on production: ' . $e->getMessage());
+        }
+    }
+
     protected function hasNoPendingMigrations(): bool
     {
-        // Use migrate:status to get any pending migrations.
-        Artisan::call('migrate:status', [
-            '--pending' => true,
-            '--database' => $this->option('database'),
-            '--path' => $this->option('path'),
-            '--realpath' => $this->option('realpath')
-        ]);
-
-        // After trimming excess line endings,
-        // the number of line endings should match the number of pending migrations.
-        return substr_count(trim(Artisan::output()), "\n") == 0;
+        return count($this->pendingMigrationNames()) === 0;
     }
 }
