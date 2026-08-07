@@ -92,6 +92,41 @@ class LaravelPlanetscale
         return ($response->successful()) ? $response->json('number') : null;
     }
 
+    /**
+     * Find an already-open deploy request for the given branch, if any.
+     *
+     * PlanetScale allows only one open deploy request per branch: if a previous
+     * run crashed between creating and completing its deploy request, creating
+     * a new one fails until the stale one is closed. Reusing it makes the
+     * migration flow self-healing.
+     */
+    public function openDeployRequestNumber(string $branch): ?int
+    {
+        // Server-side filters keep the result on page one even when the closed
+        // deploy-request history grows large; the client-side checks below stay
+        // as a safety net in case a filter is ignored.
+        $response = $this->get('deploy-requests', [
+            'state' => 'open',
+            'branch' => $branch,
+            'into_branch' => config('planetscale.production_branch'),
+        ]);
+
+        foreach ($response->json('data') ?? [] as $request) {
+            if (($request['state'] ?? null) === 'open'
+                && ($request['branch'] ?? null) === $branch
+                && ($request['into_branch'] ?? null) === config('planetscale.production_branch')) {
+                return $request['number'];
+            }
+        }
+
+        return null;
+    }
+
+    public function closeDeployRequest(int $number): void
+    {
+        $this->patch("deploy-requests/{$number}", ['state' => 'closed']);
+    }
+
     public function deploymentState(int $number): string
     {
         return $this->get("deploy-requests/{$number}")->json('deployment_state');
@@ -138,6 +173,14 @@ class LaravelPlanetscale
         return $this
             ->baseRequest()
             ->post($this->getUrl($endpoint), $body)
+            ->throw();
+    }
+
+    private function patch(string $endpoint, array $body = []): Response
+    {
+        return $this
+            ->baseRequest()
+            ->patch($this->getUrl($endpoint), $body)
             ->throw();
     }
 

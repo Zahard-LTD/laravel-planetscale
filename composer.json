@@ -18,7 +18,8 @@
     },
     "require-dev": {
         "phpunit/phpunit": "~9.0",
-        "orchestra/testbench": "~7"
+        "orchestra/testbench": "~7",
+        "guzzlehttp/guzzle": "^7"
     },
     "autoload": {
         "psr-4": {
