@@ -7,8 +7,6 @@ use X7media\LaravelPlanetscale\Tests\TestCase;
 
 class DeployRequestRecoveryTest extends TestCase
 {
-    private string $base_url = 'https://api.planetscale.com/v1/organizations/laravel-test/databases/laravel-test';
-
     private function configure(): void
     {
         config([
@@ -34,18 +32,19 @@ class DeployRequestRecoveryTest extends TestCase
         Http::preventStrayRequests();
 
         Http::fake(function ($request) {
-            $url = $request->url();
+            // Match on the path: the open-DR lookup carries query parameters.
+            $path = parse_url($request->url(), PHP_URL_PATH);
             $method = $request->method();
 
             return match (true) {
-                str_ends_with($url, '/branches') && $method === 'POST' => Http::response($this->getFixture('branch.success'), 201),
-                str_ends_with($url, '/branches/artisan-migrate-0000000000') => Http::response($this->getFixture('branch-ready.success'), 200),
-                str_ends_with($url, '/passwords') => Http::response($this->getFixture('branch-password.success'), 201),
-                str_ends_with($url, '/deploy-requests') && $method === 'GET' => Http::response(['data' => []], 200),
-                str_ends_with($url, '/deploy-requests') && $method === 'POST' => Http::response($this->getFixture('new-deploy-request.success'), 200),
-                str_ends_with($url, '/deploy-requests/1') && $method === 'GET' => Http::response($this->getFixture('deployed.no-changes'), 200),
-                str_ends_with($url, '/deploy-requests/1') && $method === 'PATCH' => Http::response($this->getFixture('deployed.success'), 200),
-                default => Http::response(['message' => "Unexpected request: {$method} {$url}"], 500),
+                str_ends_with($path, '/branches') && $method === 'POST' => Http::response($this->getFixture('branch.success'), 201),
+                str_ends_with($path, '/branches/artisan-migrate-0000000000') => Http::response($this->getFixture('branch-ready.success'), 200),
+                str_ends_with($path, '/passwords') => Http::response($this->getFixture('branch-password.success'), 201),
+                str_ends_with($path, '/deploy-requests') && $method === 'GET' => Http::response(['data' => []], 200),
+                str_ends_with($path, '/deploy-requests') && $method === 'POST' => Http::response($this->getFixture('new-deploy-request.success'), 200),
+                str_ends_with($path, '/deploy-requests/1') && $method === 'GET' => Http::response($this->getFixture('deployed.no-changes'), 200),
+                str_ends_with($path, '/deploy-requests/1') && $method === 'PATCH' => Http::response($this->getFixture('deployed.success'), 200),
+                default => Http::response(['message' => "Unexpected request: {$method} {$path}"], 500),
             };
         });
 
@@ -65,6 +64,37 @@ class DeployRequestRecoveryTest extends TestCase
     }
 
     /**
+     * A pretend run must not change anything: no deploy request is created
+     * (merging one would apply real schema changes) and no ledger row is
+     * written on either branch.
+     */
+    public function test_pretend_mode_never_creates_a_deploy_request(): void
+    {
+        $this->configure();
+
+        Http::preventStrayRequests();
+
+        Http::fake(function ($request) {
+            $path = parse_url($request->url(), PHP_URL_PATH);
+            $method = $request->method();
+
+            return match (true) {
+                str_ends_with($path, '/branches') && $method === 'POST' => Http::response($this->getFixture('branch.success'), 201),
+                str_ends_with($path, '/branches/artisan-migrate-0000000000') => Http::response($this->getFixture('branch-ready.success'), 200),
+                str_ends_with($path, '/passwords') => Http::response($this->getFixture('branch-password.success'), 201),
+                default => Http::response(['message' => "Unexpected request: {$method} {$path}"], 500),
+            };
+        });
+
+        $this->artisan('pscale:migrate --pretend')
+            ->assertExitCode(0);
+
+        Http::assertNotSent(function ($request) {
+            return str_contains(parse_url($request->url(), PHP_URL_PATH), '/deploy-requests');
+        });
+    }
+
+    /**
      * PlanetScale allows a single open deploy request per branch: when a
      * previous run crashed after creating one, the next run must adopt it
      * instead of failing to create a duplicate forever.
@@ -76,14 +106,14 @@ class DeployRequestRecoveryTest extends TestCase
         Http::preventStrayRequests();
 
         Http::fake(function ($request) {
-            $url = $request->url();
+            $path = parse_url($request->url(), PHP_URL_PATH);
             $method = $request->method();
 
             return match (true) {
-                str_ends_with($url, '/branches') && $method === 'POST' => Http::response($this->getFixture('branch.success'), 201),
-                str_ends_with($url, '/branches/artisan-migrate-0000000000') => Http::response($this->getFixture('branch-ready.success'), 200),
-                str_ends_with($url, '/passwords') => Http::response($this->getFixture('branch-password.success'), 201),
-                str_ends_with($url, '/deploy-requests') && $method === 'GET' => Http::response([
+                str_ends_with($path, '/branches') && $method === 'POST' => Http::response($this->getFixture('branch.success'), 201),
+                str_ends_with($path, '/branches/artisan-migrate-0000000000') => Http::response($this->getFixture('branch-ready.success'), 200),
+                str_ends_with($path, '/passwords') => Http::response($this->getFixture('branch-password.success'), 201),
+                str_ends_with($path, '/deploy-requests') && $method === 'GET' => Http::response([
                     'data' => [
                         [
                             'number' => 1,
@@ -93,9 +123,9 @@ class DeployRequestRecoveryTest extends TestCase
                         ],
                     ],
                 ], 200),
-                str_ends_with($url, '/deploy-requests/1') && $method === 'GET' => Http::response($this->getFixture('deployed.success'), 200),
-                str_ends_with($url, '/deploy-requests/1/deploy') => Http::response($this->getFixture('apply-deploy-request.success'), 200),
-                default => Http::response(['message' => "Unexpected request: {$method} {$url}"], 500),
+                str_ends_with($path, '/deploy-requests/1') && $method === 'GET' => Http::response($this->getFixture('deployed.success'), 200),
+                str_ends_with($path, '/deploy-requests/1/deploy') => Http::response($this->getFixture('apply-deploy-request.success'), 200),
+                default => Http::response(['message' => "Unexpected request: {$method} {$path}"], 500),
             };
         });
 

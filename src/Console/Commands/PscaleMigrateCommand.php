@@ -44,6 +44,8 @@ class PscaleMigrateCommand extends BaseCommand
 
     public function handle(): int
     {
+        $this->pollRate = max(0, (int) config('planetscale.poll_rate', $this->pollRate));
+
         $this->info('Laravel migration tool for Planetscale databases.');
         $this->newLine();
 
@@ -137,8 +139,11 @@ class PscaleMigrateCommand extends BaseCommand
             // requests never carry data either — so the dev branch's `migrations`
             // ledger can be missing rows (or empty on a freshly created branch).
             // Backfill it from production so `migrate` below only runs the
-            // migrations that are truly pending.
-            $this->backfillDevelopmentLedger($connectionName, $productionLedger);
+            // migrations that are truly pending. Skipped in pretend mode, which
+            // must not write anywhere (not even ledger rows on the dev branch).
+            if (!$this->option('pretend')) {
+                $this->backfillDevelopmentLedger($connectionName, $productionLedger);
+            }
 
             $this->line('Running Laravel migrations on development branch...');
             if ($this->call('migrate', [
@@ -155,6 +160,14 @@ class PscaleMigrateCommand extends BaseCommand
                 return $this->error('An error occured while trying to complete the migration on the development branch.');
         } else {
             $this->warn("Testing detected. Skip running `php artisan migrate`...");
+        }
+
+        // Pretend runs must not change anything: no deploy request (merging one
+        // would apply real schema changes), no ledger writes anywhere.
+        if ($this->option('pretend')) {
+            $this->newLine();
+            $this->info('Pretend mode: skipping deploy request creation and ledger sync.');
+            return;
         }
 
         // Reuse an open deploy request left behind by a previous crashed run
@@ -348,13 +361,24 @@ class PscaleMigrateCommand extends BaseCommand
     }
 
     /**
+     * The migrations table name, honoring a non-default `database.migrations`
+     * config (Laravel 11+ array form or the legacy string form).
+     */
+    protected function migrationTable(): string
+    {
+        $migrations = config('database.migrations', 'migrations');
+
+        return is_array($migrations) ? ($migrations['table'] ?? 'migrations') : ($migrations ?: 'migrations');
+    }
+
+    /**
      * All ledger rows currently recorded on the production branch.
      */
     protected function productionLedgerRows(string $connectionName): array
     {
         try {
             return DB::connection($connectionName)
-                ->table('migrations')
+                ->table($this->migrationTable())
                 ->orderBy('id')
                 ->get(['migration', 'batch'])
                 ->all();
@@ -376,17 +400,18 @@ class PscaleMigrateCommand extends BaseCommand
 
         try {
             $connection = DB::connection($connectionName);
+            $table = $this->migrationTable();
 
-            if (! $connection->getSchemaBuilder()->hasTable('migrations')) {
+            if (! $connection->getSchemaBuilder()->hasTable($table)) {
                 $this->call('migrate:install', ['--database' => $this->option('database')]);
             }
 
-            $known = $connection->table('migrations')->pluck('migration')->all();
+            $known = $connection->table($table)->pluck('migration')->all();
 
             $missing = collect($productionLedger)->reject(fn ($row) => in_array($row->migration, $known));
 
             foreach ($missing as $row) {
-                $connection->table('migrations')->insert([
+                $connection->table($table)->insert([
                     'migration' => $row->migration,
                     'batch' => $row->batch,
                 ]);
@@ -419,19 +444,26 @@ class PscaleMigrateCommand extends BaseCommand
             $this->restoreProductionConnection($connectionName, $productionConfig);
 
             $connection = DB::connection($connectionName);
+            $table = $this->migrationTable();
 
-            $batch = ((int) $connection->table('migrations')->max('batch')) + 1;
+            $batch = ((int) $connection->table($table)->max('batch')) + 1;
 
             foreach ($migrations as $migration) {
-                if (! $connection->table('migrations')->where('migration', $migration)->exists()) {
-                    $connection->table('migrations')->insert([
+                if (! $connection->table($table)->where('migration', $migration)->exists()) {
+                    $connection->table($table)->insert([
                         'migration' => $migration,
                         'batch' => $batch,
                     ]);
+
+                    // Mirror Laravel's --step contract: one batch per migration,
+                    // so individual rollbacks group the same way as on dev.
+                    if ($this->option('step')) {
+                        $batch++;
+                    }
                 }
             }
 
-            $this->line('Migration ledger updated on production (batch ' . $batch . ', ' . count($migrations) . ' migration(s)).');
+            $this->line('Migration ledger updated on production (' . count($migrations) . ' migration(s)).');
         } catch (Exception $e) {
             $this->error('Schema was deployed but the migration ledger could not be recorded on production: ' . $e->getMessage());
         }

@@ -21,6 +21,13 @@ return [
     'skip_revert_period' => (bool) env('PLANETSCALE_SKIP_REVERT_PERIOD', true),
 
     /*
+     * Seconds between polls of a deploy request's deployment state while
+     * waiting for it to become mergeable / to complete. Overridable mainly
+     * so the test suite can drop it to 0.
+     */
+    'poll_rate' => (int) env('PLANETSCALE_MIGRATE_POLL_RATE', 5),
+
+    /*
      *   For security, when customizing this config,
      *   DO NOT use a hard-coded service token here.
      */

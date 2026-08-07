@@ -25,6 +25,9 @@ class BranchTest extends TestCase
             "{$base_url}/branches" => Http::response($this->getFixture('branch.success'), 201),
             "{$base_url}/branches/artisan-migrate-0000000000" => Http::response($this->getFixture('branch-ready.success'), 200),
             "{$base_url}/branches/artisan-migrate-0000000000/passwords" => Http::response($this->getFixture('branch-password.success'), 201),
+            // The open-DR recovery lookup sends query params; return an empty
+            // list so the command falls through to creating a new request.
+            "{$base_url}/deploy-requests?*" => Http::response(['data' => []], 200),
             "{$base_url}/deploy-requests" => Http::response($this->getFixture('new-deploy-request.success'), 200),
             "{$base_url}/deploy-requests/1" => Http::response($this->getFixture('deployed.success'), 200),
             "{$base_url}/deploy-requests/1/deploy" => Http::response($this->getFixture('apply-deploy-request.success'), 200),
@@ -59,6 +62,9 @@ class BranchTest extends TestCase
             "{$base_url}/branches" => Http::response($this->getFixture('branch.success'), 201),
             "{$base_url}/branches/artisan-migrate-0000000000" => Http::response($this->getFixture('branch-ready.success'), 200),
             "{$base_url}/branches/artisan-migrate-0000000000/passwords" => Http::response($this->getFixture('branch-password.success'), 201),
+            // The open-DR recovery lookup sends query params; return an empty
+            // list so the command falls through to creating a new request.
+            "{$base_url}/deploy-requests?*" => Http::response(['data' => []], 200),
             "{$base_url}/deploy-requests" => Http::response($this->getFixture('new-deploy-request.success'), 200),
             "{$base_url}/deploy-requests/1" => Http::response($this->getFixture('deployed.pending-revert'), 200),
             "{$base_url}/deploy-requests/1/deploy" => Http::response($this->getFixture('apply-deploy-request.success'), 200),
@@ -93,6 +99,9 @@ class BranchTest extends TestCase
             "{$base_url}/branches" => Http::response($this->getFixture('branch.success'), 201),
             "{$base_url}/branches/artisan-migrate-0000000000" => Http::response($this->getFixture('branch-ready.success'), 200),
             "{$base_url}/branches/artisan-migrate-0000000000/passwords" => Http::response($this->getFixture('branch-password.success'), 201),
+            // The open-DR recovery lookup sends query params; return an empty
+            // list so the command falls through to creating a new request.
+            "{$base_url}/deploy-requests?*" => Http::response(['data' => []], 200),
             "{$base_url}/deploy-requests" => Http::response($this->getFixture('new-deploy-request.success'), 200),
             "{$base_url}/deploy-requests/1" => Http::response($this->getFixture('deployed.pending-revert'), 200),
             "{$base_url}/deploy-requests/1/deploy" => Http::response($this->getFixture('apply-deploy-request.success'), 200),
@@ -125,6 +134,9 @@ class BranchTest extends TestCase
             "{$base_url}/branches" => Http::response($this->getFixture('branch.success'), 201),
             "{$base_url}/branches/artisan-migrate-0000000000" => Http::response($this->getFixture('branch-ready.success'), 200),
             "{$base_url}/branches/artisan-migrate-0000000000/passwords" => Http::response($this->getFixture('branch-password.success'), 201),
+            // The open-DR recovery lookup sends query params; return an empty
+            // list so the command falls through to creating a new request.
+            "{$base_url}/deploy-requests?*" => Http::response(['data' => []], 200),
             "{$base_url}/deploy-requests" => Http::response($this->getFixture('new-deploy-request.success'), 200),
             "{$base_url}/deploy-requests/1" => Http::response($this->getFixture('deployed.pending-revert'), 200),
             "{$base_url}/deploy-requests/1/deploy" => Http::response($this->getFixture('apply-deploy-request.success'), 200),

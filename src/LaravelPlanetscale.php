@@ -102,7 +102,14 @@ class LaravelPlanetscale
      */
     public function openDeployRequestNumber(string $branch): ?int
     {
-        $response = $this->get('deploy-requests');
+        // Server-side filters keep the result on page one even when the closed
+        // deploy-request history grows large; the client-side checks below stay
+        // as a safety net in case a filter is ignored.
+        $response = $this->get('deploy-requests', [
+            'state' => 'open',
+            'branch' => $branch,
+            'into_branch' => config('planetscale.production_branch'),
+        ]);
 
         foreach ($response->json('data') ?? [] as $request) {
             if (($request['state'] ?? null) === 'open'
